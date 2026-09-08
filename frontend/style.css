@@ -1,0 +1,61 @@
+/* Custom styles for Land Record Digitization System */
+
+.tab-btn {
+  color: #64748b;
+  border: 1px solid transparent;
+}
+
+.tab-btn:hover {
+  color: #0f172a;
+  background-color: #f1f5f9;
+}
+
+.tab-btn.active {
+  color: #065f46;
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+/* Leaflet map container styling */
+#gis-map {
+  z-index: 1;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  padding: 2px;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px;
+  line-height: 1.4;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Overlap polygon pulse animation */
+@keyframes overlap-pulse {
+  0% { fill-opacity: 0.4; }
+  50% { fill-opacity: 0.85; }
+  100% { fill-opacity: 0.4; }
+}
+
+.disputed-overlap-polygon {
+  animation: overlap-pulse 2s infinite ease-in-out;
+}

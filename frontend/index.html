@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intelligent Land Record Digitization & Validation System</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- TOP GOVT BANNER -->
+  <header class="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white shadow-lg border-b-4 border-amber-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3.5">
+        <div class="w-11 h-11 bg-white/10 rounded-xl p-2 flex items-center justify-center border border-white/20 backdrop-blur">
+          <i data-lucide="shield-check" class="w-7 h-7 text-amber-400"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-semibold tracking-wider uppercase text-amber-400">Ministry of Rural Development</span>
+            <span class="text-xs text-white/50">•</span>
+            <span class="text-xs text-white/80">Government of India</span>
+          </div>
+          <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            Intelligent Land Record Digitization & Validation System
+            <span class="text-xs bg-emerald-500/30 text-emerald-300 font-medium px-2 py-0.5 rounded-full border border-emerald-400/30">AI + GIS + Blockchain</span>
+          </h1>
+        </div>
+      </div>
+
+      <!-- Quick Stats Top Pills -->
+      <div class="flex items-center gap-2 text-xs">
+        <div class="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-white/70">Ledger Status:</span>
+          <span id="top-ledger-status" class="font-semibold text-emerald-300">Verified Secure</span>
+        </div>
+        <div class="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+          <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-300"></i>
+          <span class="text-white/70">Pilot Region:</span>
+          <span class="font-semibold text-white">Rampur, Varanasi</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-4 overflow-x-auto py-2">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard Overview
+      </button>
+      <button onclick="switchTab('digitize')" id="tab-digitize" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="scan-line" class="w-4 h-4"></i> AI-OCR Digitizer
+      </button>
+      <button onclick="switchTab('disputes')" id="tab-disputes" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="alert-triangle" class="w-4 h-4"></i> Dispute Engine
+        <span id="badge-disputes-count" class="ml-1 bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-bold">1</span>
+      </button>
+      <button onclick="switchTab('map')" id="tab-map" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="map" class="w-4 h-4"></i> GIS Cadastral Map
+      </button>
+      <button onclick="switchTab('ledger')" id="tab-ledger" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="blocks" class="w-4 h-4"></i> Blockchain Audit
+      </button>
+      <button onclick="switchTab('citizen')" id="tab-citizen" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 transition-all">
+        <i data-lucide="search" class="w-4 h-4"></i> Citizen Portal
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- 1. DASHBOARD VIEW -->
+    <section id="view-dashboard" class="space-y-6">
+      <!-- KPI Metric Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase text-slate-500">Total Land Parcels</p>
+            <h3 id="stat-total-records" class="text-2xl font-black text-slate-800 mt-1">--</h3>
+            <p class="text-xs text-slate-500 mt-1"><span id="stat-total-hectares" class="font-medium text-emerald-600">--</span> ha mapped</p>
+          </div>
+          <div class="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+            <i data-lucide="file-check" class="w-6 h-6"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase text-slate-500">Active Boundary Disputes</p>
+            <h3 id="stat-active-disputes" class="text-2xl font-black text-rose-600 mt-1">--</h3>
+            <p class="text-xs text-rose-600 font-medium mt-1"><i data-lucide="alert-circle" class="w-3 h-3 inline"></i> Spatial Encroachment Flagged</p>
+          </div>
+          <div class="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600">
+            <i data-lucide="shield-alert" class="w-6 h-6"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase text-slate-500">Clear & Validated</p>
+            <h3 id="stat-clear-records" class="text-2xl font-black text-teal-700 mt-1">--</h3>
+            <p class="text-xs text-slate-500 mt-1"><span id="stat-clear-pct" class="text-teal-600 font-bold">--%</span> of total registry</p>
+          </div>
+          <div class="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center text-teal-700">
+            <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase text-slate-500">OCR & Extraction Accuracy</p>
+            <h3 id="stat-avg-confidence" class="text-2xl font-black text-indigo-700 mt-1">--%</h3>
+            <p class="text-xs text-slate-500 mt-1">ML Confidence Score</p>
+          </div>
+          <div class="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+            <i data-lucide="sparkles" class="w-6 h-6"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Flow Architecture Infographic Box -->
+        <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+          <div class="flex items-center justify-between border-b pb-3">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="git-merge" class="w-5 h-5 text-emerald-600"></i>
+              System Pipeline Architecture
+            </h3>
+            <span class="text-xs bg-slate-100 text-slate-700 font-semibold px-2.5 py-1 rounded-md">End-to-End Workflow</span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200/60">
+              <div class="w-8 h-8 mx-auto mb-2 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">1</div>
+              <p class="font-bold text-xs text-slate-800">Scan & Upload</p>
+              <p class="text-[11px] text-slate-500 mt-1">Khasra, Deed, 7/12</p>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200/60">
+              <div class="w-8 h-8 mx-auto mb-2 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs">2</div>
+              <p class="font-bold text-xs text-slate-800">AI-OCR Extract</p>
+              <p class="text-[11px] text-slate-500 mt-1">Survey No, Owners, Area</p>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200/60">
+              <div class="w-8 h-8 mx-auto mb-2 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center font-bold text-xs">3</div>
+              <p class="font-bold text-xs text-slate-800">Validate & Detect</p>
+              <p class="text-[11px] text-slate-500 mt-1">GIS Overlaps & Anomaly</p>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200/60">
+              <div class="w-8 h-8 mx-auto mb-2 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center font-bold text-xs">4</div>
+              <p class="font-bold text-xs text-slate-800">Secure & Ledger</p>
+              <p class="text-[11px] text-slate-500 mt-1">SHA-256 Audit Trail</p>
+            </div>
+          </div>
+
+          <!-- Feature Highlights Checklist -->
+          <div class="bg-emerald-50/70 border border-emerald-200 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 font-medium text-emerald-900">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-600"></i> Auto Overlap Detection (Shapely)
+            </div>
+            <div class="flex items-center gap-2 font-medium text-emerald-900">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-600"></i> Duplicate Khasra Prevention
+            </div>
+            <div class="flex items-center gap-2 font-medium text-emerald-900">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-600"></i> Co-Sharer 100% Equity Audit
+            </div>
+            <div class="flex items-center gap-2 font-medium text-emerald-900">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-600"></i> Tamper-Evident Ledger
+            </div>
+          </div>
+        </div>
+
+        <!-- Pilot District Summary Card -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b">
+              <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <i data-lucide="building-2" class="w-5 h-5 text-amber-600"></i>
+                Revenue Jurisdiction
+              </h3>
+              <span class="text-xs bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded border border-amber-200">Active Pilot</span>
+            </div>
+            <div class="mt-4 space-y-2 text-xs text-slate-600">
+              <div class="flex justify-between py-1 border-b border-slate-100">
+                <span class="font-medium text-slate-500">State:</span>
+                <span class="font-bold text-slate-800">Uttar Pradesh</span>
+              </div>
+              <div class="flex justify-between py-1 border-b border-slate-100">
+                <span class="font-medium text-slate-500">District / Tehsil:</span>
+                <span class="font-bold text-slate-800">Varanasi / Sadar</span>
+              </div>
+              <div class="flex justify-between py-1 border-b border-slate-100">
+                <span class="font-medium text-slate-500">Village:</span>
+                <span class="font-bold text-slate-800">Rampur (Halka 04)</span>
+              </div>
+              <div class="flex justify-between py-1">
+                <span class="font-medium text-slate-500">Survey Baseline:</span>
+                <span class="font-bold text-emerald-700">Bhulekh UP Cadastral 2024</span>
+              </div>
+            </div>
+          </div>
+          <button onclick="switchTab('digitize')" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2.5 px-4 rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm transition">
+            <i data-lucide="file-plus" class="w-4 h-4"></i> Digitize New Land Deed
+          </button>
+        </div>
+      </div>
+
+      <!-- Recent Records Table -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <h3 class="font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="table" class="w-5 h-5 text-slate-600"></i>
+            Cadastral Record Registry
+          </h3>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-500">Click any parcel for full title chain and GIS inspect</span>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-semibold">
+              <tr>
+                <th class="px-4 py-3">Khasra / Khata</th>
+                <th class="px-4 py-3">Owners & Co-Sharers</th>
+                <th class="px-4 py-3">Classification</th>
+                <th class="px-4 py-3">Area (m² / Acres)</th>
+                <th class="px-4 py-3">Validation Status</th>
+                <th class="px-4 py-3">OCR Score</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-records-tbody" class="divide-y divide-slate-100 font-medium">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. AI-OCR DIGITIZER VIEW -->
+    <section id="view-digitize" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div class="border-b pb-4 mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="scan" class="w-5 h-5 text-emerald-600"></i>
+              Document Scanning & Intelligent Digitization
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Upload a scanned revenue document or choose an official pre-loaded sample deed to test automated validation & dispute detection.</p>
+          </div>
+        </div>
+
+        <!-- Sample Deed Quick Pickers -->
+        <div class="mb-5">
+          <label class="block text-xs font-bold text-slate-600 mb-2 uppercase">Or Load Official Demonstration Template:</label>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <button onclick="loadTemplate('sample_clear_105')" class="p-3 text-left bg-emerald-50/50 hover:bg-emerald-100/70 border border-emerald-200 rounded-lg transition">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-emerald-900">Khasra #105 (Rampur)</span>
+                <span class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Clear Title</span>
+              </div>
+              <p class="text-[11px] text-slate-600 mt-1">Normal 2,400 m² agricultural deed with verified joint 50/50 shares.</p>
+            </button>
+
+            <button onclick="loadTemplate('sample_disputed_encroachment')" class="p-3 text-left bg-rose-50/50 hover:bg-rose-100/70 border border-rose-200 rounded-lg transition">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-rose-900">Khasra #102/B (Encroachment)</span>
+                <span class="text-[10px] bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded font-bold">Overlap Test</span>
+              </div>
+              <p class="text-[11px] text-slate-600 mt-1">Contested claim overlapping the cadastral boundaries of Parcel 101.</p>
+            </button>
+
+            <button onclick="loadTemplate('sample_share_mismatch')" class="p-3 text-left bg-amber-50/50 hover:bg-amber-100/70 border border-amber-200 rounded-lg transition">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-amber-900">Khasra #108 (Share Error)</span>
+                <span class="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">120% Equity Error</span>
+              </div>
+              <p class="text-[11px] text-slate-600 mt-1">Defective partition deed where declared co-sharers sum to 120%.</p>
+            </button>
+          </div>
+        </div>
+
+        <!-- Split Screen: Raw Deed Text vs Structured Extracted Fields -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Left: Scanned Deed Content -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
+                Scanned Revenue Deed (OCR Input)
+              </label>
+              <span class="text-[11px] text-slate-400">Hindi / English Revenue Format</span>
+            </div>
+            <textarea id="digitize-raw-text" rows="14" class="w-full p-3 font-mono text-xs bg-slate-900 text-emerald-400 rounded-lg border border-slate-700 shadow-inner focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Paste OCR extracted text or revenue certificate extract..."></textarea>
+            <button onclick="parseRawText()" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+              <i data-lucide="cpu" class="w-4 h-4 text-emerald-400"></i> Re-Extract Fields using AI Regex / Heuristics
+            </button>
+          </div>
+
+          <!-- Right: Structured Form Preview -->
+          <div class="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div class="flex items-center justify-between border-b pb-2">
+              <h4 class="font-bold text-xs text-slate-800 uppercase flex items-center gap-1.5">
+                <i data-lucide="check-square" class="w-4 h-4 text-teal-600"></i>
+                Parsed Metadata & Cadastral Attributes
+              </h4>
+              <span id="ocr-confidence-badge" class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">Confidence: 98%</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label class="block text-slate-500 font-medium">Khasra / Survey #</label>
+                <input type="text" id="form-khasra" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800" />
+              </div>
+              <div>
+                <label class="block text-slate-500 font-medium">Khata Number</label>
+                <input type="text" id="form-khata" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800" />
+              </div>
+              <div>
+                <label class="block text-slate-500 font-medium">Village</label>
+                <input type="text" id="form-village" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800" />
+              </div>
+              <div>
+                <label class="block text-slate-500 font-medium">Tehsil & District</label>
+                <input type="text" id="form-tehsil-dist" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800" />
+              </div>
+              <div>
+                <label class="block text-slate-500 font-medium">Stated Area (Sq. Meters)</label>
+                <input type="number" id="form-area" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800" />
+              </div>
+              <div>
+                <label class="block text-slate-500 font-medium">Land Classification</label>
+                <select id="form-type" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800">
+                  <option value="Agricultural">Agricultural</option>
+                  <option value="Residential">Residential</option>
+                  <option value="Commercial">Commercial</option>
+                  <option value="Industrial">Industrial</option>
+                  <option value="Government/Public">Government/Public</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Owners List Preview -->
+            <div>
+              <label class="block text-slate-500 font-medium text-xs mb-1">Declared Title Holders / Co-Sharers:</label>
+              <div id="form-owners-container" class="space-y-1.5">
+                <!-- Injected via JS -->
+              </div>
+            </div>
+
+            <!-- Action Button -->
+            <div class="pt-2">
+              <button onclick="submitDigitization()" id="btn-submit-digitize" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl text-sm flex items-center justify-center gap-2 shadow-md transition">
+                <i data-lucide="shield-check" class="w-5 h-5"></i>
+                Digitize, Validate & Detect Spatial Conflicts
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Instant Validation Result Alert (Hidden initially) -->
+        <div id="digitize-result-alert" class="hidden mt-6 p-4 rounded-xl border"></div>
+      </div>
+    </section>
+
+    <!-- 3. DISPUTE ENGINE VIEW -->
+    <section id="view-disputes" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="alert-octagon" class="w-5 h-5 text-rose-600"></i>
+              Intelligent Dispute & Encroachment Detection Engine
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Automated GIS spatial overlap analysis, equity share verification, and fraudulent duplicate survey detection.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="filterDisputes('ACTIVE')" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-100 text-rose-800 border border-rose-200">Active Disputes</button>
+            <button onclick="filterDisputes('RESOLVED')" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">Resolved</button>
+            <button onclick="filterDisputes('')" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">All</button>
+          </div>
+        </div>
+
+        <!-- Dispute Cards Container -->
+        <div id="disputes-list-container" class="grid grid-cols-1 gap-4">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. GIS CADASTRAL MAP VIEW -->
+    <section id="view-map" class="hidden space-y-4">
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="map" class="w-5 h-5 text-emerald-600"></i>
+            <h2 class="text-base font-bold text-slate-800">Cadastral Parcel Map Viewer (Rampur Village)</h2>
+          </div>
+          <!-- Map Legend -->
+          <div class="flex items-center gap-3 text-xs font-medium">
+            <span class="flex items-center gap-1.5">
+              <span class="w-3.5 h-3.5 bg-emerald-500 rounded border border-emerald-700"></span> Clear / Validated
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3.5 h-3.5 bg-amber-500 rounded border border-amber-700"></span> Warning / Review
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3.5 h-3.5 bg-rose-600 rounded border border-rose-800"></span> Disputed Parcel
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3.5 h-3.5 bg-purple-600 rounded border border-purple-900 animate-pulse"></span> Overlap Polygon
+            </span>
+          </div>
+        </div>
+
+        <div class="relative w-full h-[540px] rounded-lg overflow-hidden border border-slate-300">
+          <div id="gis-map" class="w-full h-full"></div>
+          
+          <!-- Floating Parcel Details Box -->
+          <div id="map-parcel-card" class="absolute bottom-4 right-4 z-[1000] bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-xl border border-slate-300 max-w-sm w-full hidden text-xs">
+            <!-- Injected on parcel click -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. BLOCKCHAIN AUDIT LEDGER VIEW -->
+    <section id="view-ledger" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="shield-alert" class="w-5 h-5 text-emerald-600"></i>
+              Cryptographic Audit Trail (SHA-256 Block Ledger)
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Every land digitization, dispute detection event, and mutation approval is immutably hashed and chained.</p>
+          </div>
+          <button onclick="verifyLedgerIntegrity()" class="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm transition">
+            <i data-lucide="check-check" class="w-4 h-4"></i> Run Cryptographic Verification
+          </button>
+        </div>
+
+        <!-- Ledger Integrity Banner -->
+        <div id="ledger-verification-banner" class="p-3.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="badge-check" class="w-5 h-5 text-emerald-600"></i>
+            <span id="ledger-banner-text" class="font-semibold">All blocks cryptographically verified against SHA-256 chain. Zero tampering detected.</span>
+          </div>
+          <span class="text-[11px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded">100% Immutable</span>
+        </div>
+
+        <!-- Audit Blocks Timeline -->
+        <div id="audit-blocks-container" class="space-y-3 font-mono text-xs">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. CITIZEN / FARMER PORTAL VIEW -->
+    <section id="view-citizen" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
+        <div class="border-b pb-4 text-center max-w-2xl mx-auto">
+          <div class="w-12 h-12 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center mx-auto mb-2">
+            <i data-lucide="search" class="w-6 h-6"></i>
+          </div>
+          <h2 class="text-xl font-bold text-slate-800">Citizen Land Title & Dispute Lookup</h2>
+          <p class="text-xs text-slate-500 mt-1">Search by Khasra Number, Khatauni Number, or Landowner Name to verify legal status, dispute clearance, and obtain digitized parcel certificates.</p>
+        </div>
+
+        <div class="max-w-xl mx-auto flex gap-2">
+          <input type="text" id="citizen-search-input" placeholder="Enter Khasra # (e.g. 101, 102, 103) or Owner Name..." class="flex-1 p-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          <button onclick="handleCitizenSearch()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-3 rounded-xl text-sm flex items-center gap-2 transition shadow">
+            <i data-lucide="search" class="w-4 h-4"></i> Search
+          </button>
+        </div>
+
+        <div id="citizen-search-results" class="max-w-3xl mx-auto space-y-4">
+          <!-- Results injected via JS -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
+      <p>© 2026 Intelligent Land Record Digitization and Validation System • Digital India & Rural Development</p>
+      <div class="flex items-center gap-3">
+        <span class="text-emerald-700 font-semibold flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> PostGIS / Shapely Enabled
+        </span>
+        <span>•</span>
+        <span class="text-slate-600 font-medium">FastAPI Backend</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
