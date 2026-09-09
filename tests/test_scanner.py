@@ -62,5 +62,38 @@ class TestRegistryScanner(unittest.TestCase):
         self.assertIn("records", res)
         self.assertGreater(res["count"], 0)
 
+    def test_gemini_document_insights_structure(self):
+        from backend.ocr_service import generate_gemini_document_insights
+        sample_record = {
+            "khasra_no": "105",
+            "khata_no": "78",
+            "village": "Rampur",
+            "district": "Varanasi",
+            "state": "Uttar Pradesh",
+            "area_sq_meters": 2400.0,
+            "land_type": "Agricultural",
+            "owners": [{"name": "Rameshwar Prasad", "share_percentage": 100.0}]
+        }
+        insights = generate_gemini_document_insights(sample_record, filename="sample_clear_105.pdf")
+        self.assertIn("risk_level", insights)
+        self.assertIn(insights["risk_level"], ["LOW", "MEDIUM", "HIGH"])
+        self.assertIn("title_verdict", insights)
+        self.assertIn("key_observations", insights)
+        self.assertIn("statutory_advisory", insights)
+        self.assertIn("actionable_next_step", insights)
+        self.assertIn("source", insights)
+
+    def test_analyze_parcel_endpoint(self):
+        from backend.routes import analyze_parcel_with_gemini
+        payload = {
+            "khasra_no": "102",
+            "village": "Rampur"
+        }
+        res = analyze_parcel_with_gemini(payload)
+        self.assertTrue(res["success"])
+        self.assertIn("insights", res)
+        self.assertEqual(res["insights"]["risk_level"], "HIGH")
+
 if __name__ == "__main__":
     unittest.main()
+
