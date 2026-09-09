@@ -1008,7 +1008,7 @@ header.bg-white .user-profile-badge .user-name-text,
   position: fixed;
   bottom: 86px;
   right: 24px;
-  width: 350px;
+  width: 375px;
   max-width: calc(100vw - 32px);
   background: rgba(15, 23, 42, 0.96);
   backdrop-filter: blur(16px);
@@ -1152,6 +1152,31 @@ header.bg-white .user-profile-badge .user-name-text,
   border-radius: 0.5rem;
   padding: 0.625rem 0.75rem;
 }
+
+.hud-gemini-card {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  box-shadow: 0 8px 20px -4px rgba(168, 85, 247, 0.2);
+  transition: all 0.25s ease;
+}
+
+.hud-gemini-card.risk-low {
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow: 0 4px 18px -4px rgba(16, 185, 129, 0.2);
+}
+
+.hud-gemini-card.risk-medium {
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 4px 18px -4px rgba(245, 158, 11, 0.2);
+}
+
+.hud-gemini-card.risk-high {
+  border-color: rgba(244, 63, 94, 0.5);
+  box-shadow: 0 4px 18px -4px rgba(244, 63, 94, 0.25);
+}
+
 
 
 

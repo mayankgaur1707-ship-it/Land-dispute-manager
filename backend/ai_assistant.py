@@ -5,6 +5,24 @@ import urllib.request
 import urllib.error
 from typing import Dict, Any, List, Optional, Tuple
 
+def _ensure_env_loaded():
+    if not os.environ.get("GEMINI_API_KEY"):
+        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_ensure_env_loaded()
+
 from backend.database import (
     get_all_records, get_record_by_id, get_all_disputes,
     get_audit_ledger, get_pending_verifications, get_state_district_analytics
@@ -708,7 +726,11 @@ def query_gemini_api(
         "parts": [{"text": message}]
     })
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
+    models_to_try = [
+        "models/gemini-flash-latest",
+        "models/gemini-3.6-flash"
+    ]
+    
     payload_data = {
         "contents": contents,
         "generationConfig": {
@@ -717,30 +739,33 @@ def query_gemini_api(
         }
     }
 
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload_data).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            candidate = res_data.get("candidates", [{}])[0]
-            text = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
-            if text:
-                # Also generate deep link actions
-                expert_fallback = generate_expert_response(message, role, current_record_id)
-                return {
-                    "reply": text,
-                    "suggested_actions": expert_fallback["suggested_actions"],
-                    "suggested_questions": expert_fallback["suggested_questions"],
-                    "referenced_records": expert_fallback["referenced_records"],
-                    "referenced_disputes": expert_fallback["referenced_disputes"],
-                    "source": "gemini-2.5-flash"
-                }
-    except Exception as e:
-        print(f"Notice: Gemini API call failed or timed out ({e}). Seamlessly falling back to autonomous Expert Engine.")
-        return None
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={key}"
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload_data).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=14) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                candidate = res_data.get("candidates", [{}])[0]
+                text = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
+                if text:
+                    expert_fallback = generate_expert_response(message, role, current_record_id)
+                    return {
+                        "reply": text,
+                        "suggested_actions": expert_fallback["suggested_actions"],
+                        "suggested_questions": expert_fallback["suggested_questions"],
+                        "referenced_records": expert_fallback["referenced_records"],
+                        "referenced_disputes": expert_fallback["referenced_disputes"],
+                        "source": f"gemini-live-ai ({model_name.replace('models/', '')})"
+                    }
+        except Exception as e:
+            print(f"Notice: Gemini call with {model_name} failed ({e}). Trying next model or fallback.")
+            continue
+
+    return None
 
 # -------------------------------------------------------------------------
 # MAIN FACADE: PROCESS CHAT MESSAGE

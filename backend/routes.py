@@ -18,7 +18,7 @@ from backend.database import (
 from backend.validation_engine import validate_land_record
 from backend.ocr_service import (
     extract_land_record_from_text, get_sample_templates, generate_document_svg,
-    SAMPLE_TEMPLATES, scan_registry_document
+    SAMPLE_TEMPLATES, scan_registry_document, generate_gemini_document_insights
 )
 from backend.blockchain_audit import record_audit_event, verify_audit_ledger, calculate_sha256
 from backend.ai_assistant import process_chat_message
@@ -829,6 +829,7 @@ async def scan_document_endpoint(
         "message": f"Document '{filename}' scanned with {scan_result['overall_accuracy']}% accuracy and added to registry table.",
         "record": record,
         "corner_hud_data": corner_hud,
+        "gemini_insights": corner_hud.get("gemini_insights"),
         "accuracy_report": {
             "overall_accuracy": scan_result["overall_accuracy"],
             "rating": corner_hud["accuracy_label"],
@@ -849,6 +850,54 @@ def get_scanned_documents():
         "count": len(records_sorted),
         "records": records_sorted
     }
+
+@router.post("/ai/analyze-parcel")
+def analyze_parcel_with_gemini(payload: Dict[str, Any] = Body(...)):
+    """
+    Real-time legal and cadastral risk analysis for any land record or parcel using Gemini 3.6 Flash.
+    Provides instant risk score, title strength verdict, statutory references, and actionable next steps.
+    """
+    record_id = payload.get("record_id")
+    khasra_no = payload.get("khasra_no")
+    village = payload.get("village")
+    
+    target_record = None
+    if record_id:
+        target_record = get_record(record_id)
+    elif khasra_no:
+        records = get_all_records()
+        for r in records:
+            if str(r.get("khasra_no", "")).strip() == str(khasra_no).strip():
+                if not village or str(r.get("village", "")).lower() == str(village).lower():
+                    target_record = r
+                    break
+    
+    if not target_record:
+        target_record = {
+            "khasra_no": khasra_no or "105",
+            "khata_no": payload.get("khata_no", "78"),
+            "village": village or "Rampur",
+            "district": payload.get("district", "Varanasi"),
+            "state": payload.get("state", "Uttar Pradesh"),
+            "area_sq_meters": float(payload.get("area_sq_meters", 2400.0)),
+            "land_type": payload.get("land_type", "Agricultural"),
+            "owners": payload.get("owners", [{"name": payload.get("owner_name", "Registered Landowner"), "share_percentage": 100.0}])
+        }
+
+    insights = generate_gemini_document_insights(
+        parsed_record=target_record,
+        raw_text=payload.get("raw_text", ""),
+        filename=payload.get("filename", f"Deed_Khasra_{target_record.get('khasra_no')}.pdf"),
+        api_key=payload.get("api_key")
+    )
+    
+    return {
+        "success": True,
+        "record_id": target_record.get("id"),
+        "khasra_no": target_record.get("khasra_no"),
+        "insights": insights
+    }
+
 
 
 
