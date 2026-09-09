@@ -238,13 +238,15 @@ def digitize_record(payload: Dict[str, Any] = Body(...)):
     now = datetime.now(timezone.utc).isoformat()
     
     # 1. OCR text extraction if raw text is passed
-    if "raw_text" in payload and not payload.get("khasra_no"):
+    if "raw_text" in payload and payload.get("raw_text"):
         extracted = extract_land_record_from_text(payload["raw_text"])
-        data = {**extracted, **payload}
+        # Merge: extracted defaults overridden by non-empty user payload fields
+        user_overrides = {k: v for k, v in payload.items() if v is not None and v != ""}
+        data = {**extracted, **user_overrides}
     else:
         data = payload
 
-    khasra_no = data.get("khasra_no", "").strip()
+    khasra_no = str(data.get("khasra_no", "")).strip()
     if not khasra_no:
         raise HTTPException(status_code=400, detail="Khasra/Survey Number is required")
 
@@ -254,14 +256,29 @@ def digitize_record(payload: Dict[str, Any] = Body(...)):
 
     record_id = data.get("id") or f"REC-{uuid.uuid4().hex[:8].upper()}"
 
+    state_name = data.get("state", "Uttar Pradesh")
+    if not data.get("boundary_geojson"):
+        if "Maharashtra" in state_name:
+            base_lon, base_lat = 73.850, 18.520
+        elif "Telangana" in state_name:
+            base_lon, base_lat = 78.355, 17.462
+        else:
+            base_lon, base_lat = 82.980, 25.310
+        fallback_boundary = {
+            "type": "Polygon",
+            "coordinates": [[[base_lon, base_lat], [base_lon + 0.002, base_lat], [base_lon + 0.002, base_lat - 0.0015], [base_lon, base_lat - 0.0015], [base_lon, base_lat]]]
+        }
+    else:
+        fallback_boundary = data.get("boundary_geojson")
+
     record_candidate = {
         "id": record_id,
         "khasra_no": khasra_no,
-        "khata_no": data.get("khata_no", "1"),
+        "khata_no": str(data.get("khata_no", "1")),
         "village": data.get("village", "Rampur"),
         "tehsil": data.get("tehsil", "Sadar"),
         "district": data.get("district", "Varanasi"),
-        "state": data.get("state", "Uttar Pradesh"),
+        "state": state_name,
         "area_sq_meters": area_sqm,
         "area_hectares": area_hectares,
         "area_acres": area_acres,
@@ -271,10 +288,7 @@ def digitize_record(payload: Dict[str, Any] = Body(...)):
         "mutation_no": data.get("mutation_no"),
         "registration_date": data.get("registration_date", now[:10]),
         "owners": data.get("owners", [{"name": "Registered Owner", "aadhaar_masked": "XXXX-XXXX-1111", "share_percentage": 100.0}]),
-        "boundary_geojson": data.get("boundary_geojson") or {
-            "type": "Polygon",
-            "coordinates": [[[82.980, 25.310], [82.982, 25.310], [82.982, 25.308], [82.980, 25.308], [82.980, 25.310]]]
-        },
+        "boundary_geojson": fallback_boundary,
         "field_confidences": data.get("field_confidences", {}),
         "document_source": data.get("document_source", "Scanned Revenue Deed"),
         "dilrmp_cross_verified": data.get("dilrmp_cross_verified", True),

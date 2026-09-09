@@ -27,7 +27,7 @@ def polygon_area_sq_meters(poly: Polygon) -> float:
         area += (xi * yj) - (xj * yi)
     return abs(area) / 2.0
 
-def validate_land_record(candidate: Dict[str, Any], existing_records: List[Dict[str, Any]] = None) -> Tuple[str, List[str], List[Dict[str, Any]], float]:
+def validate_land_record(candidate: Dict[str, Any], existing_records: List[Dict[str, Any]] = None) -> Tuple[str, List[str], List[Dict[str, Any]], float, str]:
     """
     Validates a land record against existing records and rule-based checks.
     Returns:

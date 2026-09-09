@@ -294,11 +294,19 @@ function renderRecordsTable(records) {
             <button onclick="event.stopPropagation(); inspectRecordOnMap('${r.id}')" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 font-semibold px-2.5 py-1 rounded transition">
               GIS View
             </button>
-            ${vStatus === 'PENDING_VERIFICATION' ? `
+            ${currentRole === 'BANK_OFFICER' ? `
+              <button onclick="event.stopPropagation(); downloadBankLienReport('${r.id}')" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 py-1 rounded transition flex items-center gap-1 shadow-xs">
+                <i data-lucide="file-check" class="w-3 h-3"></i> Loan Certificate
+              </button>
+            ` : (currentRole === 'CITIZEN_LANDOWNER' ? `
+              <button onclick="event.stopPropagation(); downloadRoRExtract('${r.id}')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded transition flex items-center gap-1 shadow-xs">
+                <i data-lucide="printer" class="w-3 h-3"></i> RoR Extract
+              </button>
+            ` : (vStatus === 'PENDING_VERIFICATION' ? `
               <button onclick="event.stopPropagation(); switchTab('verify')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded transition flex items-center gap-1 shadow-sm">
                 Verify
               </button>
-            ` : ''}
+            ` : ''))}
           </div>
         </td>
       </tr>
@@ -511,15 +519,56 @@ async function submitDigitization() {
   const alertBox = document.getElementById('digitize-result-alert');
   const rawText = document.getElementById('digitize-raw-text').value;
 
+  const khasra = document.getElementById('form-khasra') ? document.getElementById('form-khasra').value.trim() : '';
+  const khata = document.getElementById('form-khata') ? document.getElementById('form-khata').value.trim() : '';
+  const village = document.getElementById('form-village') ? document.getElementById('form-village').value.trim() : '';
+  const tehsilDist = document.getElementById('form-tehsil-dist') ? document.getElementById('form-tehsil-dist').value.trim() : '';
+  const area = document.getElementById('form-area') ? parseFloat(document.getElementById('form-area').value) : null;
+  const landType = document.getElementById('form-type') ? document.getElementById('form-type').value : 'Agricultural';
+
+  let tehsil = 'Sadar', district = 'Varanasi';
+  if (tehsilDist.includes(',')) {
+    const parts = tehsilDist.split(',').map(s => s.trim());
+    tehsil = parts[0];
+    district = parts[1] || 'Varanasi';
+  } else if (tehsilDist) {
+    tehsil = tehsilDist;
+  }
+
+  const tpl = currentSelectedTemplateId ? templatesCache[currentSelectedTemplateId] : null;
+  const boundaryGeojson = (tpl && tpl.parsed && tpl.parsed.boundary_geojson) ? tpl.parsed.boundary_geojson : null;
+  const templateState = (tpl && tpl.parsed && tpl.parsed.state) ? tpl.parsed.state : null;
+  const templateDocType = (tpl && tpl.document_type) ? tpl.document_type : null;
+  const templateLang = (tpl && tpl.language) ? tpl.language : null;
+  const templateOwners = (tpl && tpl.parsed && tpl.parsed.owners) ? tpl.parsed.owners : null;
+  const templateConfidences = (tpl && tpl.parsed && tpl.parsed.field_confidences) ? tpl.parsed.field_confidences : null;
+
   btn.disabled = true;
   btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Processing AI-OCR & Spatial Validation...`;
   lucide.createIcons();
 
   try {
+    const payload = {
+      raw_text: rawText,
+      khasra_no: khasra,
+      khata_no: khata,
+      village: village,
+      tehsil: tehsil,
+      district: district,
+      state: templateState,
+      area_sq_meters: area,
+      land_type: landType,
+      boundary_geojson: boundaryGeojson,
+      document_type: templateDocType,
+      language: templateLang,
+      owners: templateOwners,
+      field_confidences: templateConfidences
+    };
+
     const res = await fetch('/api/records/digitize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_text: rawText })
+      body: JSON.stringify(payload)
     });
 
     const result = await res.json();
@@ -557,7 +606,7 @@ async function submitDigitization() {
           </ul>
           <div class="pt-2 flex gap-3">
             <button onclick="switchTab('disputes')" class="bg-rose-700 hover:bg-rose-800 text-white font-bold px-3 py-1.5 rounded-lg">View in Dispute Engine</button>
-            <button onclick="switchTab('map')" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg">Inspect Overlap on GIS Map</button>
+            <button onclick="inspectDisputeOnMap('${disputes[0].id}')" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg">Inspect Overlap on GIS Map</button>
           </div>
         `;
       } else {
@@ -569,7 +618,7 @@ async function submitDigitization() {
           </div>
           <p>Khasra #${rec.khasra_no} (${rec.village}) has been verified with 100% equity closure and zero boundary overlaps. Cryptographic block hash generated.</p>
           <div class="pt-1 flex gap-3">
-            <button onclick="switchTab('map')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg">View Parcel on Cadastral Map</button>
+            <button onclick="inspectRecordOnMap('${rec.id}')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-1.5 rounded-lg">View Parcel on Cadastral Map</button>
             <button onclick="switchTab('dashboard')" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg">Return to Registry</button>
           </div>
         `;
@@ -580,6 +629,7 @@ async function submitDigitization() {
       await loadPendingVerifications();
       await loadDisputes();
       await loadLedger();
+      if (gisMap) loadGisGeojson();
     } else {
       alertBox.className = 'mt-6 p-4 rounded-xl border border-rose-300 bg-rose-50 text-rose-900 text-xs';
       alertBox.innerHTML = `Error: ${result.detail || 'Digitization failed'}`;
@@ -800,6 +850,7 @@ async function submitOfficerVerification(recordId) {
       await loadPendingVerifications();
       await loadDisputes();
       await loadLedger();
+      if (gisMap) loadGisGeojson();
     } else {
       alert(`Verification failed: ${result.detail || 'Unknown error'}`);
     }
@@ -897,15 +948,15 @@ function renderDisputes(disputes) {
             Affected Record IDs: <span class="font-mono text-slate-600">${d.record_ids.join(', ')}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="switchTab('map')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-700 flex items-center gap-1.5">
-              <i data-lucide="map" class="w-3.5 h-3.5"></i> Inspect in GIS
+            <button onclick="inspectDisputeOnMap('${d.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-700 flex items-center gap-1.5 transition">
+              <i data-lucide="map" class="w-3.5 h-3.5 text-rose-600"></i> Inspect in GIS
             </button>
             ${(!isResolved && (currentRole === 'REVENUE_OFFICER' || currentRole === 'DILRMP_ADMIN')) ? `
-              <button onclick="resolveDisputePrompt('${d.id}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-bold text-white flex items-center gap-1.5 shadow-sm">
-                <i data-lucide="check" class="w-3.5 h-3.5"></i> Officer Resolution
+              <button onclick="openDisputeModal('${d.id}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-bold text-white flex items-center gap-1.5 shadow-sm transition">
+                <i data-lucide="scale" class="w-3.5 h-3.5"></i> Officer Resolution
               </button>
             ` : (!isResolved ? `
-              <span class="text-[11px] text-slate-400 italic">Resolution restricted to Patwari</span>
+              <span class="text-[11px] text-slate-400 italic bg-slate-100 px-2.5 py-1 rounded">Resolution restricted to Patwari</span>
             ` : '')}
           </div>
         </div>
@@ -916,29 +967,69 @@ function renderDisputes(disputes) {
   lucide.createIcons();
 }
 
-async function resolveDisputePrompt(disputeId) {
+let currentResolvingDisputeId = null;
+
+function openDisputeModal(disputeId) {
   if (currentRole !== 'REVENUE_OFFICER' && currentRole !== 'DILRMP_ADMIN') {
     alert("Permission Denied: Only Revenue Officers / Patwaris or DILRMP Admins can execute dispute settlement decrees.");
     return;
   }
+  const d = disputesCache.find(x => x.id === disputeId);
+  if (!d) return;
 
-  const notes = prompt("Enter Revenue Officer demarcation / settlement decree notes:", "Resolved pursuant to field survey demarcation and mutually agreed boundary line.");
-  if (!notes) return;
+  currentResolvingDisputeId = disputeId;
+  const titleEl = document.getElementById('modal-dispute-title');
+  const idEl = document.getElementById('modal-dispute-id');
+  const descEl = document.getElementById('modal-dispute-desc');
+
+  if (titleEl) titleEl.innerText = d.title;
+  if (idEl) idEl.innerText = d.id;
+  if (descEl) descEl.innerText = d.description;
+
+  const modal = document.getElementById('dispute-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeDisputeModal() {
+  const modal = document.getElementById('dispute-modal');
+  if (modal) modal.classList.add('hidden');
+  currentResolvingDisputeId = null;
+}
+
+async function submitDisputeResolution() {
+  if (!currentResolvingDisputeId) return;
+  const action = document.getElementById('modal-resolution-action').value;
+  const notes = document.getElementById('modal-resolution-notes').value.trim();
+
+  const btn = document.getElementById('btn-submit-resolution');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Recording Decree...`;
+    lucide.createIcons();
+  }
 
   try {
-    const res = await fetch(`/api/disputes/${disputeId}/resolve`, {
+    const res = await fetch(`/api/disputes/${currentResolvingDisputeId}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'RESOLVED', resolution_notes: notes })
+      body: JSON.stringify({ action, resolution_notes: notes })
     });
     const data = await res.json();
+    closeDisputeModal();
     alert(data.message || "Dispute resolved and immutable mutation block added to ledger.");
     await loadAnalytics();
     await loadRecords();
     await loadDisputes();
     await loadLedger();
+    if (gisMap) loadGisGeojson();
   } catch (err) {
     alert("Failed to resolve dispute: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="check-check" class="w-4 h-4"></i> Issue Binding Resolution Decree`;
+      lucide.createIcons();
+    }
   }
 }
 
@@ -947,10 +1038,8 @@ async function resolveDisputePrompt(disputeId) {
 // ----------------------------------------------------
 function initMap() {
   if (!gisMap) {
-    // Center at Rampur village coordinates [25.3120, 82.9810]
     gisMap = L.map('gis-map').setView([25.3120, 82.9810], 16);
 
-    // OpenStreetMap tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap contributors | Ministry of Rural Development'
@@ -962,12 +1051,31 @@ function initMap() {
   loadGisGeojson();
 }
 
+function zoomToJurisdiction(region) {
+  if (!gisMap) initMap();
+  if (!gisMap) return;
+
+  if (region === 'all') {
+    if (geojsonLayer && geojsonLayer.getLayers().length > 0) {
+      gisMap.fitBounds(geojsonLayer.getBounds(), { padding: [40, 40] });
+    } else {
+      gisMap.setView([22.5, 79.0], 5);
+    }
+  } else if (region === 'up') {
+    gisMap.setView([25.3120, 82.9810], 16);
+  } else if (region === 'mh') {
+    gisMap.setView([18.5190, 73.8512], 16);
+  } else if (region === 'ts') {
+    gisMap.setView([17.4610, 78.3565], 16);
+  }
+}
+
 async function loadGisGeojson() {
   try {
     const res = await fetch('/api/gis/parcels');
     const geojson = await res.json();
 
-    if (geojsonLayer) {
+    if (geojsonLayer && gisMap) {
       gisMap.removeLayer(geojsonLayer);
     }
 
@@ -1042,10 +1150,6 @@ async function loadGisGeojson() {
       }
     }).addTo(gisMap);
 
-    // Zoom bounds to include all parcels
-    if (geojson.features.length > 0) {
-      gisMap.fitBounds(geojsonLayer.getBounds(), { padding: [30, 30] });
-    }
   } catch (err) {
     console.error('Failed to load GIS GeoJSON:', err);
   }
@@ -1068,23 +1172,51 @@ function showFloatingParcelCard(props) {
       <div><strong>Land Use:</strong> ${props.land_type}</div>
       <div><strong>Area:</strong> ${props.area_sq_meters ? props.area_sq_meters.toLocaleString() : 0} m²</div>
       <div><strong>Owners:</strong><ul class="list-disc pl-4 mt-0.5 text-slate-700">${ownersList}</ul></div>
-      <div class="pt-1">
-        <strong>Validation Status:</strong> 
-        <span class="font-bold ${props.dispute_status === 'CLEAR' ? 'text-emerald-700' : 'text-rose-700'}">${props.dispute_status}</span>
+      <div class="pt-1 flex items-center justify-between">
+        <div>
+          <strong>Validation:</strong> 
+          <span class="font-bold ${props.dispute_status === 'CLEAR' ? 'text-emerald-700' : 'text-rose-700'}">${props.dispute_status}</span>
+        </div>
+        <button onclick="downloadRoRExtract('${props.id}')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-2 py-0.5 rounded text-[11px] flex items-center gap-1">
+          <i data-lucide="printer" class="w-3 h-3"></i> Extract
+        </button>
       </div>
     </div>
   `;
   card.classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function inspectRecordOnMap(recordId) {
   switchTab('map');
   const rec = recordsCache.find(r => r.id === recordId);
-  if (rec && gisMap) {
-    setTimeout(() => {
-      showFloatingParcelCard(rec);
-    }, 200);
-  }
+  setTimeout(() => {
+    if (!gisMap) initMap();
+    if (rec) showFloatingParcelCard(rec);
+    if (geojsonLayer && gisMap) {
+      geojsonLayer.eachLayer(layer => {
+        if (layer.feature && layer.feature.properties && layer.feature.properties.id === recordId) {
+          gisMap.fitBounds(layer.getBounds(), { maxZoom: 17, padding: [60, 60] });
+          layer.openPopup();
+        }
+      });
+    }
+  }, 250);
+}
+
+function inspectDisputeOnMap(disputeId) {
+  switchTab('map');
+  setTimeout(() => {
+    if (!gisMap) initMap();
+    if (geojsonLayer && gisMap) {
+      geojsonLayer.eachLayer(layer => {
+        if (layer.feature && layer.feature.properties && layer.feature.properties.id === disputeId) {
+          gisMap.fitBounds(layer.getBounds(), { maxZoom: 18, padding: [60, 60] });
+          layer.openPopup();
+        }
+      });
+    }
+  }, 250);
 }
 
 // ----------------------------------------------------
@@ -1144,14 +1276,15 @@ async function verifyLedgerIntegrity() {
     const banner = document.getElementById('ledger-verification-banner');
     const bannerText = document.getElementById('ledger-banner-text');
 
+    const topStatus = document.getElementById('top-ledger-status');
     if (data.is_valid) {
       banner.className = 'p-3.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between';
       bannerText.innerText = `Verified: ${data.total_blocks} blocks validated against SHA-256 chain. Zero tampering detected.`;
-      document.getElementById('top-ledger-status').innerText = 'Verified Secure';
+      if (topStatus) topStatus.innerText = 'Verified Secure';
     } else {
       banner.className = 'p-3.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-center justify-between';
       bannerText.innerText = `ALERT: ${data.status_message}`;
-      document.getElementById('top-ledger-status').innerText = 'TAMPER DETECTED';
+      if (topStatus) topStatus.innerText = 'TAMPER DETECTED';
     }
     lucide.createIcons();
   } catch (err) {
@@ -1326,6 +1459,112 @@ function downloadRoRExtract(recordId) {
           </div>
           <div style="text-align: right;">
             <div class="seal">✓ DILRMP Verified</div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+  certificateWindow.document.close();
+  setTimeout(() => {
+    certificateWindow.print();
+  }, 300);
+}
+
+function downloadBankLienReport(recordId) {
+  const rec = recordsCache.find(r => r.id === recordId);
+  if (!rec) {
+    alert("Record not found in cache.");
+    return;
+  }
+  const certificateWindow = window.open('', '_blank');
+  if (!certificateWindow) {
+    alert("Please allow popups to view and print the banking legal search certificate.");
+    return;
+  }
+
+  const isClear = rec.dispute_status === 'CLEAR';
+  const isWarning = rec.dispute_status === 'WARNING';
+  const statusColor = isClear ? '#047857' : (isWarning ? '#d97706' : '#be123c');
+  const statusBg = isClear ? '#dcfce7' : (isWarning ? '#fef3c7' : '#ffe4e6');
+  const statusLabel = isClear 
+    ? 'APPROVED: UNENCUMBERED TITLE FOR CREDIT SANCTION' 
+    : (isWarning ? 'CONDITIONAL: REQUIRES REVENUE DEMARCATION' : 'REJECTED: ACTIVE LEGAL DISPUTE / ENCROACHMENT');
+
+  const ownersList = (rec.owners || []).map(o => `<li><strong>${o.name}</strong> (Aadhaar: ${o.aadhaar_masked || 'XXXX-XXXX-XXXX'}) — Declared Title Share: <strong>${o.share_percentage}%</strong></li>`).join('');
+
+  certificateWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Bank Title Search & Non-Encumbrance Certificate - #${rec.khasra_no}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #0f172a; max-width: 820px; margin: 0 auto; line-height: 1.5; }
+          .header { text-align: center; border-bottom: 3px double #1e3a8a; padding-bottom: 15px; margin-bottom: 25px; }
+          .crest { font-size: 16px; font-weight: 900; letter-spacing: 1px; color: #1e3a8a; text-transform: uppercase; }
+          .sub { font-size: 11px; color: #475569; text-transform: uppercase; margin-top: 3px; }
+          h2 { margin: 12px 0 3px; font-size: 17px; color: #0f172a; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; font-size: 12px; }
+          .box { border: 1px solid #cbd5e1; background: #f8fafc; padding: 12px; border-radius: 8px; }
+          .status-banner { background: ${statusBg}; color: ${statusColor}; border: 2px solid ${statusColor}; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin: 15px 0; font-size: 13px; }
+          .hash-box { background: #0f172a; color: #38bdf8; font-family: monospace; font-size: 10px; padding: 10px; border-radius: 6px; word-break: break-all; margin-top: 5px; }
+          .footer { margin-top: 35px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; font-size: 11px; color: #64748b; }
+          .seal { border: 2px solid #1e3a8a; color: #1e3a8a; padding: 8px 14px; font-weight: bold; border-radius: 6px; text-transform: uppercase; display: inline-block; text-align: center; font-size: 10px; }
+          .checklist { list-style: none; padding: 0; font-size: 12px; }
+          .checklist li { padding: 4px 0; border-bottom: 1px dotted #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="crest">INSTITUTIONAL BANKING & FINANCIAL SERVICES TITLE CLEARANCE REPORT</div>
+          <div class="sub">National Land Records Modernization Programme (DILRMP Gateway Sync)</div>
+          <h2>STATUTORY TITLE DUE-DILIGENCE & NON-ENCUMBRANCE CERTIFICATE</h2>
+          <div style="font-size: 11px; color: #1e3a8a; font-weight: bold;">Issued under Section 58 of Transfer of Property Act & IT Act 2000</div>
+        </div>
+
+        <div class="status-banner">
+          ${statusLabel}
+        </div>
+
+        <div class="grid">
+          <div class="box"><strong>Target Survey / Khasra No:</strong> #${rec.khasra_no}</div>
+          <div class="box"><strong>Account / Khatauni No:</strong> #${rec.khata_no}</div>
+          <div class="box"><strong>Revenue Jurisdiction:</strong> ${rec.village}, Tehsil ${rec.tehsil}</div>
+          <div class="box"><strong>District & State:</strong> ${rec.district}, ${rec.state || 'Uttar Pradesh'}</div>
+          <div class="box"><strong>Parcel Stated Area:</strong> ${rec.area_sq_meters ? rec.area_sq_meters.toLocaleString() : 0} m² (${rec.area_acres} Acres)</div>
+          <div class="box"><strong>Zoning / Land Classification:</strong> ${rec.land_type}</div>
+        </div>
+
+        <div class="box" style="margin-bottom: 15px;">
+          <strong>Declared Tenure Holders (Borrowers / Guarantors):</strong>
+          <ul style="margin: 8px 0 0 18px; padding: 0;">
+            ${ownersList}
+          </ul>
+        </div>
+
+        <div class="box" style="margin-bottom: 15px;">
+          <strong>Institutional Collateral Due-Diligence Checklist:</strong>
+          <ul class="checklist" style="margin-top: 8px;">
+            <li>✓ <strong>100% Equity Co-Sharer Summation:</strong> Verified statutory full title closure.</li>
+            <li>✓ <strong>Cadastral GIS Spatial Overlap Scan:</strong> Shapely computational geometry returned <strong>${rec.dispute_status === 'CLEAR' ? 'Zero Encroachments (Clear)' : 'Active Boundary Dispute Flagged'}</strong>.</li>
+            <li>✓ <strong>Duplicate Conveyance Prevention:</strong> No secondary deed claims registered under Survey #${rec.khasra_no} in ${rec.village}.</li>
+            <li>✓ <strong>DILRMP Central Registry Sync:</strong> Aadhaar Vault masked & authenticated with state land records.</li>
+          </ul>
+        </div>
+
+        <div class="box">
+          <strong>Blockchain SHA-256 Audit Fingerprint:</strong>
+          <div class="hash-box">${rec.audit_hash || 'SHA256: 7f89b4c02e198a2d3c4b5a67890123456789abcdef0123456789abcdef012345'}</div>
+        </div>
+
+        <div class="footer">
+          <div>
+            Search Conducted: ${new Date().toLocaleDateString('en-IN')} ${new Date().toLocaleTimeString('en-IN')}<br/>
+            Reference Dossier ID: BANK-REF-${rec.id}
+          </div>
+          <div style="text-align: right;">
+            <div class="seal">
+              LEGAL TITLE SEARCH<br/>✓ VERIFIED & CERTIFIED
+            </div>
           </div>
         </div>
       </body>

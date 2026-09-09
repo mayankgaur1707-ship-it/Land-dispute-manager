@@ -59,7 +59,7 @@
           <div class="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span class="text-white/70">DILRMP Gateway:</span>
-            <span class="font-semibold text-emerald-300">Synchronized</span>
+            <span id="top-ledger-status" class="font-semibold text-emerald-300">Synchronized</span>
           </div>
         </div>
       </div>
@@ -590,6 +590,28 @@
           </div>
         </div>
 
+        <!-- Jurisdiction Quick-Zoom Navigation Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg mb-3">
+          <div class="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+            <i data-lucide="compass" class="w-4 h-4 text-emerald-600"></i>
+            <span>Cadastral Navigation:</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="zoomToJurisdiction('all')" class="px-2.5 py-1 text-xs font-semibold rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-xs transition">
+              📍 All India Bounds
+            </button>
+            <button onclick="zoomToJurisdiction('up')" class="px-2.5 py-1 text-xs font-bold rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs transition flex items-center gap-1">
+              <span>🇮🇳</span> UP: Rampur (Varanasi)
+            </button>
+            <button onclick="zoomToJurisdiction('mh')" class="px-2.5 py-1 text-xs font-bold rounded bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 shadow-xs transition flex items-center gap-1">
+              <span>🌾</span> MH: Theur (Pune)
+            </button>
+            <button onclick="zoomToJurisdiction('ts')" class="px-2.5 py-1 text-xs font-bold rounded bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 shadow-xs transition flex items-center gap-1">
+              <span>📜</span> TS: Kondapur (Ranga Reddy)
+            </button>
+          </div>
+        </div>
+
         <div class="relative w-full h-[540px] rounded-lg overflow-hidden border border-slate-300">
           <div id="gis-map" class="w-full h-full"></div>
           
@@ -672,6 +694,58 @@
       </div>
     </div>
   </footer>
+
+  <!-- REVENUE OFFICER DISPUTE RESOLUTION MODAL -->
+  <div id="dispute-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between border-b pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+            <i data-lucide="scale" class="w-5 h-5 text-emerald-700"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-sm text-slate-800">Revenue Demarcation & Dispute Resolution</h3>
+            <p class="text-[11px] text-slate-500">Official adjudication decree under Revenue Code</p>
+          </div>
+        </div>
+        <button onclick="closeDisputeModal()" class="text-slate-400 hover:text-slate-600 font-bold p-1">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+          <div class="flex justify-between">
+            <span class="font-bold text-slate-700" id="modal-dispute-title">Cadastral Boundary Encroachment</span>
+            <span class="font-mono text-slate-400" id="modal-dispute-id">DISP-001</span>
+          </div>
+          <p class="text-slate-600" id="modal-dispute-desc">Loading details...</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Adjudication / Resolution Action:</label>
+          <select id="modal-resolution-action" class="w-full p-2.5 border border-slate-300 rounded-lg font-semibold text-slate-800">
+            <option value="RESOLVED">✓ Demarcation Decree Executed (Boundary Fixed & Mutated)</option>
+            <option value="RESOLVED">✓ Mutual Co-Sharer Compromise Settlement (Family Partition Verified)</option>
+            <option value="RESOLVED">✓ Rectified by Physical ETS Electronic Total Station Survey</option>
+            <option value="DISMISSED">❌ Dismissed as Frivolous / Without Legal Merit</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Officer Settlement Decree Notes:</label>
+          <textarea id="modal-resolution-notes" rows="3" class="w-full p-2.5 border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-500" placeholder="State field survey observations, boundary demarcation coordinates, and order number...">Physical demarcation executed on ground by Halka Patwari and Revenue Inspector. Both plot holders present. Boundary line established along revenue pillar. Encroachment cleared.</textarea>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-200 flex items-center justify-between gap-3">
+        <button onclick="closeDisputeModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition">
+          Cancel
+        </button>
+        <button onclick="submitDisputeResolution()" id="btn-submit-resolution" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-5 py-2 rounded-lg text-xs flex items-center gap-2 shadow transition">
+          <i data-lucide="check-check" class="w-4 h-4"></i> Issue Binding Resolution Decree
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>
