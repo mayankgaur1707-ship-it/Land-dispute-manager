@@ -93,6 +93,37 @@ function handleRoleChange(role) {
   lucide.createIcons();
 }
 
+function toggleSidebar() {
+  const sidebar = document.getElementById('app-sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!sidebar) return;
+  if (window.innerWidth < 1024) {
+    const isOpen = sidebar.classList.toggle('mobile-open');
+    if (backdrop) backdrop.classList.toggle('hidden', !isOpen);
+  } else {
+    sidebar.classList.toggle('collapsed');
+  }
+  setTimeout(() => {
+    if (typeof gisMap !== 'undefined' && gisMap && typeof gisMap.invalidateSize === 'function') {
+      gisMap.invalidateSize();
+    }
+  }, 250);
+}
+
+function handleSidebarTabClick(tabId) {
+  switchTab(tabId);
+  if (window.innerWidth < 1024) {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.add('hidden');
+  }
+}
+
+window.toggleSidebar = toggleSidebar;
+window.handleSidebarTabClick = handleSidebarTabClick;
+window.switchTab = switchTab;
+
 function switchTab(tabId) {
   currentTab = tabId;
   document.querySelectorAll('section').forEach(sec => sec.classList.add('hidden'));
