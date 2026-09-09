@@ -727,6 +727,7 @@ def query_gemini_api(
     })
 
     models_to_try = [
+        "models/gemini-3-flash-preview",
         "models/gemini-flash-latest",
         "models/gemini-3.6-flash"
     ]
