@@ -39,6 +39,14 @@ def serve_index():
         return FileResponse(index_path)
     return {"message": "Land Dispute Manager API is running. Access /api/health or /docs for API documentation."}
 
+@app.get("/landing")
+@app.get("/overview")
+def serve_landing():
+    landing_path = os.path.join(frontend_dir, "landing.html")
+    if os.path.exists(landing_path):
+        return FileResponse(landing_path)
+    return FileResponse(os.path.join(frontend_dir, "index.html"))
+
 @app.on_event("startup")
 def startup_event():
     init_db()

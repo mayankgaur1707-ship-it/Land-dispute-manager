@@ -1,7 +1,8 @@
 import unittest
-from backend.models import LandClassification, DisputeStatus, DisputeType
+from backend.models import LandClassification, DisputeStatus, DisputeType, VerificationStatus
 from backend.validation_engine import validate_land_record
 from backend.blockchain_audit import calculate_sha256, GENESIS_HASH
+from backend.ocr_service import get_sample_templates, extract_land_record_from_text, generate_document_svg
 
 class TestLandValidationEngine(unittest.TestCase):
 
@@ -21,7 +22,7 @@ class TestLandValidationEngine(unittest.TestCase):
                 "coordinates": [[[82.90, 25.30], [82.91, 25.30], [82.91, 25.31], [82.90, 25.31], [82.90, 25.30]]]
             }
         }
-        status, tags, disputes, conf = validate_land_record(candidate, [])
+        status, tags, disputes, conf, ver_status = validate_land_record(candidate, [])
         self.assertEqual(status, DisputeStatus.WARNING.value)
         self.assertTrue(any("Share mismatch" in t for t in tags))
         self.assertEqual(len(disputes), 1)
@@ -44,7 +45,7 @@ class TestLandValidationEngine(unittest.TestCase):
             "owners": [{"name": "Conflicting Claimant", "share_percentage": 100.0}],
             "boundary_geojson": None
         }
-        status, tags, disputes, conf = validate_land_record(candidate, existing)
+        status, tags, disputes, conf, ver_status = validate_land_record(candidate, existing)
         self.assertEqual(status, DisputeStatus.DISPUTED.value)
         self.assertTrue(any("Duplicate Khasra" in t for t in tags))
         self.assertEqual(disputes[0]["dispute_type"], DisputeType.DUPLICATE_SURVEY_NO.value)
@@ -74,12 +75,68 @@ class TestLandValidationEngine(unittest.TestCase):
                 "coordinates": [[[82.981, 25.310], [82.983, 25.310], [82.983, 25.312], [82.981, 25.312], [82.981, 25.310]]]
             }
         }
-        status, tags, disputes, conf = validate_land_record(candidate, existing)
+        status, tags, disputes, conf, ver_status = validate_land_record(candidate, existing)
         self.assertEqual(status, DisputeStatus.DISPUTED.value)
         self.assertTrue(any("Spatial Encroachment" in t for t in tags))
         self.assertEqual(disputes[0]["dispute_type"], DisputeType.BOUNDARY_OVERLAP.value)
         self.assertIsNotNone(disputes[0]["overlap_geojson"])
         self.assertGreater(disputes[0]["overlap_area_sq_meters"], 10.0)
+
+    def test_field_confidence_and_pending_verification(self):
+        candidate = {
+            "id": "TEST-FADED",
+            "khasra_no": "115",
+            "khata_no": "63",
+            "village": "Rampur",
+            "area_sq_meters": 1600.0,
+            "owners": [{"name": "Jagannath", "share_percentage": 100.0}],
+            "field_confidences": {
+                "khasra_no": {"value": "115", "confidence": 0.65, "is_low_confidence": True},
+                "area_sq_meters": {"value": 1600.0, "confidence": 0.70, "is_low_confidence": True}
+            }
+        }
+        status, tags, disputes, conf, ver_status = validate_land_record(candidate, [])
+        self.assertEqual(ver_status, VerificationStatus.PENDING_VERIFICATION.value)
+        self.assertTrue(any("Uncertain OCR" in t for t in tags))
+        self.assertLess(conf, 0.85)
+
+    def test_multilingual_template_extraction(self):
+        templates = get_sample_templates()
+        self.assertGreaterEqual(len(templates), 4)
+
+        template_ids = [t["id"] for t in templates]
+        self.assertIn("sample_clear_105", template_ids)
+        self.assertIn("sample_marathi_7_12", template_ids)
+        self.assertIn("sample_telugu_pahani", template_ids)
+        self.assertIn("sample_low_confidence_hitl", template_ids)
+
+        marathi_tpl = next(t for t in templates if t["id"] == "sample_marathi_7_12")
+        extracted = extract_land_record_from_text(marathi_tpl["raw_text"])
+        self.assertEqual(extracted["khasra_no"], "142/A")
+        self.assertEqual(extracted["state"], "Maharashtra")
+
+    def test_svg_document_generation(self):
+        sample_record = {
+            "khasra_no": "105",
+            "khata_no": "78",
+            "village": "Rampur",
+            "tehsil": "Sadar",
+            "district": "Varanasi",
+            "state": "Uttar Pradesh",
+            "area_sq_meters": 2400.0,
+            "land_type": "Agricultural",
+            "language": "Hindi",
+            "document_type": "Scanned PDF / Khasra",
+            "owners": [{"name": "Rameshwar Prasad", "share_percentage": 50.0}],
+            "field_confidences": {
+                "khasra_no": {"confidence": 0.99, "is_low_confidence": False}
+            }
+        }
+        svg = generate_document_svg(sample_record)
+        self.assertIn("<svg", svg)
+        self.assertIn("Rampur", svg)
+        self.assertIn("BHULEKH VERIFIED", svg)
+        self.assertIn("105", svg)
 
     def test_sha256_hash_immutability(self):
         data1 = {"khasra_no": "101", "owner": "Rajesh"}
@@ -96,3 +153,4 @@ class TestLandValidationEngine(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

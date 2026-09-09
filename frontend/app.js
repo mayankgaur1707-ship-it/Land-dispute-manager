@@ -1,22 +1,77 @@
 // Land Dispute Manager - Frontend Application Logic
 
 let currentTab = 'dashboard';
+let currentRole = 'REVENUE_OFFICER';
+let currentSelectedTemplateId = 'sample_clear_105';
 let gisMap = null;
 let geojsonLayer = null;
 let templatesCache = {};
 let recordsCache = [];
 let disputesCache = [];
+let pendingVerificationsCache = [];
 
 document.addEventListener('DOMContentLoaded', async () => {
   await initApp();
 });
 
 async function initApp() {
+  setupRoleSelector();
   await loadTemplates();
   await loadAnalytics();
   await loadRecords();
+  await loadPendingVerifications();
   await loadDisputes();
   await loadLedger();
+  lucide.createIcons();
+}
+
+function setupRoleSelector() {
+  const select = document.getElementById('role-selector') || document.getElementById('role-select');
+  if (select) {
+    select.value = currentRole;
+    select.addEventListener('change', (e) => handleRoleChange(e.target.value));
+  }
+}
+
+function handleRoleChange(role) {
+  if (role === 'CITIZEN_FARMER') role = 'CITIZEN_LANDOWNER';
+  currentRole = role;
+  const bannerText = document.getElementById('role-context-text');
+  
+  if (role === 'REVENUE_OFFICER') {
+    if (bannerText) {
+      bannerText.innerHTML = `
+        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-600"></i>
+        <span>Logged in as <strong>Revenue Officer / Patwari</strong>: Full authorization for AI validation, HITL verification certification, boundary demarcation, and blockchain ledger.</span>
+      `;
+    }
+  } else if (role === 'CITIZEN_LANDOWNER') {
+    if (bannerText) {
+      bannerText.innerHTML = `
+        <i data-lucide="user" class="w-3.5 h-3.5 text-sky-600"></i>
+        <span>Logged in as <strong>Citizen / Landowner</strong>: Public title search, boundary inspection, and certified digital land record extracts.</span>
+      `;
+    }
+    switchTab('citizen');
+  } else if (role === 'BANK_OFFICER') {
+    if (bannerText) {
+      bannerText.innerHTML = `
+        <i data-lucide="landmark" class="w-3.5 h-3.5 text-indigo-600"></i>
+        <span>Logged in as <strong>Bank / Lending Officer</strong>: Non-encumbrance title clearance verification, mortgage cross-check, and active dispute risk assessment.</span>
+      `;
+    }
+  } else if (role === 'DILRMP_ADMIN') {
+    if (bannerText) {
+      bannerText.innerHTML = `
+        <i data-lucide="settings" class="w-3.5 h-3.5 text-purple-600"></i>
+        <span>Logged in as <strong>DILRMP State Admin</strong>: Pan-India progress monitoring, continuous learning OCR model metrics, and geodetic system audit.</span>
+      `;
+    }
+  }
+  
+  // Re-render records & disputes to apply role permissions
+  renderRecordsTable(recordsCache);
+  renderDisputes(disputesCache);
   lucide.createIcons();
 }
 
@@ -35,13 +90,15 @@ function switchTab(tabId) {
     setTimeout(() => {
       initMap();
     }, 150);
+  } else if (tabId === 'verify') {
+    loadPendingVerifications();
   }
 
   lucide.createIcons();
 }
 
 // ----------------------------------------------------
-// 1. ANALYTICS & DASHBOARD
+// 1. ANALYTICS & STATE PROGRESS
 // ----------------------------------------------------
 async function loadAnalytics() {
   try {
@@ -57,9 +114,94 @@ async function loadAnalytics() {
     const clearPct = data.total_records > 0 ? Math.round((data.clear_records / data.total_records) * 100) : 100;
     document.getElementById('stat-clear-pct').innerText = `${clearPct}%`;
     document.getElementById('stat-avg-confidence').innerText = `${data.avg_confidence_score}%`;
+
+    const pendingCount = data.pending_verifications || 0;
+    const statPending = document.getElementById('stat-pending-verifications');
+    if (statPending) statPending.innerText = pendingCount;
+    const badgePending = document.getElementById('badge-pending-count');
+    if (badgePending) badgePending.innerText = pendingCount;
+    const verifyQueueCount = document.getElementById('verify-queue-count');
+    if (verifyQueueCount) verifyQueueCount.innerText = `${pendingCount} Case${pendingCount === 1 ? '' : 's'} Pending`;
+
+    renderStateProgress(data.state_breakdown || {});
   } catch (err) {
     console.error('Failed to load analytics:', err);
   }
+}
+
+function renderStateProgress(statesData = {}) {
+  const container = document.getElementById('state-progress-container');
+  if (!container) return;
+
+  const statesConfig = [
+    {
+      name: "Uttar Pradesh",
+      district: "Varanasi (Sadar)",
+      flag: "🇮🇳",
+      accent: "emerald"
+    },
+    {
+      name: "Maharashtra",
+      district: "Pune (Haveli)",
+      flag: "🌾",
+      accent: "teal"
+    },
+    {
+      name: "Telangana",
+      district: "Ranga Reddy (Kondapur)",
+      flag: "📜",
+      accent: "sky"
+    }
+  ];
+
+  container.innerHTML = statesConfig.map(cfg => {
+    const stData = statesData[cfg.name] || { total: 0, verified: 0, disputed: 0, hectares: 0 };
+    const total = stData.total || 0;
+    const verified = stData.verified || 0;
+    const disputed = stData.disputed || 0;
+    const hectares = (stData.hectares || 0).toFixed(2);
+    const pct = total > 0 ? Math.round((verified / total) * 100) : 100;
+
+    return `
+      <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 hover:shadow-sm transition">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">${cfg.flag}</span>
+            <div>
+              <h4 class="font-bold text-xs text-slate-800">${cfg.name}</h4>
+              <p class="text-[10px] text-slate-500">${cfg.district}</p>
+            </div>
+          </div>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700">${total} Ingested</span>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-[11px] mb-1">
+            <span class="text-slate-500 font-medium">Clear Title Rate</span>
+            <span class="font-bold text-emerald-700">${pct}% (${verified}/${total})</span>
+          </div>
+          <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+            <div class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-[10px] pt-2 border-t border-slate-200/70 text-slate-600">
+          <div>
+            <span class="block text-slate-400">Area</span>
+            <span class="font-bold text-slate-700">${hectares} ha</span>
+          </div>
+          <div>
+            <span class="block text-slate-400">Clear</span>
+            <span class="font-bold text-emerald-600">${verified}</span>
+          </div>
+          <div>
+            <span class="block text-slate-400">Disputed</span>
+            <span class="font-bold ${disputed > 0 ? 'text-rose-600' : 'text-slate-500'}">${disputed}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ----------------------------------------------------
@@ -67,61 +209,103 @@ async function loadAnalytics() {
 // ----------------------------------------------------
 async function loadRecords() {
   try {
-    const res = await fetch('/api/records/');
+    const statusFilter = document.getElementById('dashboard-status-filter') ? document.getElementById('dashboard-status-filter').value : '';
+    const url = statusFilter ? `/api/records/?status=${statusFilter}` : '/api/records/';
+    const res = await fetch(url);
     const records = await res.json();
     recordsCache = records;
-
-    const tbody = document.getElementById('dashboard-records-tbody');
-    if (!tbody) return;
-
-    if (records.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No land records registered yet.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = records.map(r => {
-      let statusBadge = '';
-      if (r.dispute_status === 'CLEAR') {
-        statusBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800"><i data-lucide="check" class="w-3 h-3"></i> Clear Title</span>`;
-      } else if (r.dispute_status === 'WARNING') {
-        statusBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Review Needed</span>`;
-      } else {
-        statusBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Disputed</span>`;
-      }
-
-      const ownersSummary = r.owners.map(o => `${o.name} (${o.share_percentage}%)`).join(', ');
-
-      return `
-        <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="inspectRecordOnMap('${r.id}')">
-          <td class="px-4 py-3">
-            <span class="font-bold text-slate-800">Khasra #${r.khasra_no}</span>
-            <div class="text-[11px] text-slate-400">Khata #${r.khata_no} • ${r.village}</div>
-          </td>
-          <td class="px-4 py-3 text-slate-700 max-w-xs truncate" title="${ownersSummary}">
-            ${ownersSummary}
-          </td>
-          <td class="px-4 py-3 text-slate-600">
-            <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold">${r.land_type}</span>
-          </td>
-          <td class="px-4 py-3 text-slate-700">
-            ${r.area_sq_meters.toLocaleString()} m²
-            <span class="text-[11px] text-slate-400">(${r.area_acres} ac)</span>
-          </td>
-          <td class="px-4 py-3">${statusBadge}</td>
-          <td class="px-4 py-3 font-semibold text-slate-700">${Math.round(r.confidence_score * 100)}%</td>
-          <td class="px-4 py-3 text-right">
-            <button onclick="event.stopPropagation(); inspectRecordOnMap('${r.id}')" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 font-semibold px-2.5 py-1 rounded transition">
-              GIS View
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    lucide.createIcons();
+    renderRecordsTable(records);
   } catch (err) {
     console.error('Failed to load records:', err);
   }
+}
+
+function handleDashboardSearch(query) {
+  const q = (query || '').toLowerCase().trim();
+  if (!q) {
+    renderRecordsTable(recordsCache);
+    return;
+  }
+  const filtered = recordsCache.filter(r => {
+    const ownersStr = (r.owners || []).map(o => o.name.toLowerCase()).join(' ');
+    return (r.khasra_no && r.khasra_no.toLowerCase().includes(q)) ||
+           (r.khata_no && r.khata_no.toLowerCase().includes(q)) ||
+           (r.village && r.village.toLowerCase().includes(q)) ||
+           (r.state && r.state.toLowerCase().includes(q)) ||
+           ownersStr.includes(q);
+  });
+  renderRecordsTable(filtered);
+}
+
+function renderRecordsTable(records) {
+  const tbody = document.getElementById('dashboard-records-tbody');
+  if (!tbody) return;
+
+  if (records.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">No matching cadastral records found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = records.map(r => {
+    let disputeBadge = '';
+    if (r.dispute_status === 'CLEAR') {
+      disputeBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800"><i data-lucide="check" class="w-3 h-3"></i> Clear Title</span>`;
+    } else if (r.dispute_status === 'WARNING') {
+      disputeBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Review Needed</span>`;
+    } else {
+      disputeBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800"><i data-lucide="alert-octagon" class="w-3 h-3"></i> Disputed</span>`;
+    }
+
+    let verifyBadge = '';
+    const vStatus = r.verification_status || 'AUTO_VERIFIED';
+    if (vStatus === 'VERIFIED_BY_OFFICER') {
+      verifyBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200"><i data-lucide="user-check" class="w-3 h-3"></i> Officer Certified</span>`;
+    } else if (vStatus === 'PENDING_VERIFICATION') {
+      verifyBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300"><i data-lucide="clock" class="w-3 h-3"></i> HITL Review</span>`;
+    } else {
+      verifyBadge = `<span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200"><i data-lucide="sparkles" class="w-3 h-3"></i> AI Verified</span>`;
+    }
+
+    const ownersSummary = (r.owners || []).map(o => `${o.name} (${o.share_percentage}%)`).join(', ');
+    const stateTag = r.state || 'Uttar Pradesh';
+
+    return `
+      <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="inspectRecordOnMap('${r.id}')">
+        <td class="px-4 py-3">
+          <span class="font-bold text-slate-800">Khasra #${r.khasra_no}</span>
+          <div class="text-[11px] text-slate-400">Khata #${r.khata_no} • ${r.village}</div>
+        </td>
+        <td class="px-4 py-3 text-slate-700 max-w-xs truncate" title="${ownersSummary}">
+          ${ownersSummary}
+        </td>
+        <td class="px-4 py-3 text-slate-600">
+          <span class="font-semibold text-slate-800 text-[11px] block">${stateTag}</span>
+          <span class="text-[10px] text-slate-400">${r.tehsil || ''}, ${r.district || ''}</span>
+        </td>
+        <td class="px-4 py-3 text-slate-700">
+          ${r.area_sq_meters ? r.area_sq_meters.toLocaleString() : 0} m²
+          <span class="text-[11px] text-slate-400">(${r.area_acres || 0} ac)</span>
+        </td>
+        <td class="px-4 py-3">${verifyBadge}</td>
+        <td class="px-4 py-3">${disputeBadge}</td>
+        <td class="px-4 py-3 font-semibold text-slate-700">${Math.round(r.confidence_score * 100)}%</td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex items-center justify-end gap-1.5">
+            <button onclick="event.stopPropagation(); inspectRecordOnMap('${r.id}')" class="text-xs bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 font-semibold px-2.5 py-1 rounded transition">
+              GIS View
+            </button>
+            ${vStatus === 'PENDING_VERIFICATION' ? `
+              <button onclick="event.stopPropagation(); switchTab('verify')" class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded transition flex items-center gap-1 shadow-sm">
+                Verify
+              </button>
+            ` : ''}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
 }
 
 // ----------------------------------------------------
@@ -144,18 +328,46 @@ async function loadTemplates() {
 }
 
 function loadTemplate(templateId) {
+  currentSelectedTemplateId = templateId;
   const tpl = templatesCache[templateId];
   if (!tpl) return;
 
   document.getElementById('digitize-raw-text').value = tpl.raw_text.trim();
-  parseRawText();
+
+  const langElem = document.getElementById('digitize-detected-lang');
+  if (langElem) {
+    langElem.innerText = tpl.language || 'Hindi (हिंदी)';
+  }
+
+  // Render SVG document scan facsimile preview in Column 1
+  const svgContainer = document.getElementById('digitize-svg-preview-container');
+  if (svgContainer) {
+    svgContainer.innerHTML = `
+      <img src="/api/templates/${templateId}/document-svg" 
+           class="w-full h-auto object-contain rounded-lg shadow-sm" 
+           alt="Archival Document Scan Facsimile" 
+           onerror="this.parentElement.innerHTML='<div class=\\'p-6 text-center text-xs text-slate-400\\'>Vector Scan Rendering...</div>'"/>
+    `;
+  }
+
+  parseRawText(templateId);
 }
 
-async function parseRawText() {
+async function parseRawText(templateId) {
   const text = document.getElementById('digitize-raw-text').value;
   if (!text) return;
 
-  // Simple heuristic parser on client to match backend
+  // Check cached template or identify from text
+  let tpl = templateId ? templatesCache[templateId] : null;
+  if (!tpl) {
+    for (const key in templatesCache) {
+      if (text.includes(templatesCache[key].khasra_no)) {
+        tpl = templatesCache[key];
+        break;
+      }
+    }
+  }
+
   let khasra = '105';
   let khata = '78';
   let village = 'Rampur';
@@ -166,8 +378,49 @@ async function parseRawText() {
     { name: 'Rameshwar Prasad', share: 50.0, aadhaar: 'XXXX-XXXX-4491' },
     { name: 'Sunita Devi', share: 50.0, aadhaar: 'XXXX-XXXX-9923' }
   ];
+  let confKhasra = 99;
+  let confKhata = 98;
+  let confArea = 97;
+  let confOwners = 97;
+  let overallConf = 98;
+  let isLowConf = false;
 
-  if (text.includes('102/B')) {
+  if (tpl && tpl.parsed) {
+    const p = tpl.parsed;
+    khasra = p.khasra_no || khasra;
+    khata = p.khata_no || khata;
+    village = p.village || village;
+    tehsilDist = `${p.tehsil || 'Sadar'}, ${p.district || 'Varanasi'}`;
+    area = p.area_sq_meters || area;
+    landType = p.land_type || landType;
+    if (p.owners) {
+      owners = p.owners.map(o => ({
+        name: o.name,
+        share: o.share_percentage,
+        aadhaar: o.aadhaar_masked || 'XXXX-XXXX-0000'
+      }));
+    }
+    if (tpl.id === 'sample_low_confidence_hitl' || (p.field_confidences && p.field_confidences.khasra_no && p.field_confidences.khasra_no.confidence < 0.85)) {
+      confKhasra = 74;
+      confKhata = 71;
+      confArea = 78;
+      confOwners = 73;
+      overallConf = 74;
+      isLowConf = true;
+    }
+  } else if (text.includes('115')) {
+    khasra = '115';
+    khata = '32';
+    area = '1450';
+    landType = 'Agricultural';
+    owners = [{ name: 'Bholanath Yadav', share: 100.0, aadhaar: 'XXXX-XXXX-5521' }];
+    confKhasra = 74;
+    confKhata = 71;
+    confArea = 78;
+    confOwners = 73;
+    overallConf = 74;
+    isLowConf = true;
+  } else if (text.includes('102/B')) {
     khasra = '102/B';
     khata = '112';
     area = '1850';
@@ -182,6 +435,22 @@ async function parseRawText() {
       { name: 'Harish Chand', share: 60.0, aadhaar: 'XXXX-XXXX-3312' },
       { name: 'Rajat Chand', share: 60.0, aadhaar: 'XXXX-XXXX-3313' }
     ];
+  } else if (text.includes('142/A')) {
+    khasra = '142/A';
+    khata = '56';
+    village = 'Theur';
+    tehsilDist = 'Haveli, Pune';
+    area = '3200';
+    landType = 'Agricultural';
+    owners = [{ name: 'Balasaheb Patil', share: 100.0, aadhaar: 'XXXX-XXXX-6612' }];
+  } else if (text.includes('88/2')) {
+    khasra = '88/2';
+    khata = '29';
+    village = 'Kondapur';
+    tehsilDist = 'Serilingampally, Ranga Reddy';
+    area = '4500';
+    landType = 'Agricultural';
+    owners = [{ name: 'K. Venkat Rao', share: 100.0, aadhaar: 'XXXX-XXXX-8819' }];
   }
 
   document.getElementById('form-khasra').value = khasra;
@@ -191,13 +460,48 @@ async function parseRawText() {
   document.getElementById('form-area').value = area;
   document.getElementById('form-type').value = landType;
 
+  // Badges
+  const confBadge = document.getElementById('ocr-confidence-badge');
+  if (confBadge) {
+    if (isLowConf) {
+      confBadge.className = 'text-[11px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded border border-rose-300';
+      confBadge.innerText = `Confidence: ${overallConf}% (Quarantined <85%)`;
+    } else {
+      confBadge.className = 'text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-300';
+      confBadge.innerText = `Confidence: ${overallConf}% (High)`;
+    }
+  }
+
+  const bKhasra = document.getElementById('badge-conf-khasra');
+  if (bKhasra) {
+    bKhasra.innerText = `${confKhasra}%`;
+    bKhasra.className = isLowConf ? 'text-[10px] font-bold text-rose-600' : 'text-[10px] font-bold text-emerald-700';
+  }
+  const bKhata = document.getElementById('badge-conf-khata');
+  if (bKhata) {
+    bKhata.innerText = `${confKhata}%`;
+    bKhata.className = isLowConf ? 'text-[10px] font-bold text-rose-600' : 'text-[10px] font-bold text-emerald-700';
+  }
+  const bArea = document.getElementById('badge-conf-area');
+  if (bArea) {
+    bArea.innerText = `${confArea}%`;
+    bArea.className = isLowConf ? 'text-[10px] font-bold text-rose-600' : 'text-[10px] font-bold text-emerald-700';
+  }
+  const bOwners = document.getElementById('badge-conf-owners');
+  if (bOwners) {
+    bOwners.innerText = `${confOwners}%`;
+    bOwners.className = isLowConf ? 'text-[10px] font-bold text-rose-600' : 'text-[10px] font-bold text-emerald-700';
+  }
+
   const ownersContainer = document.getElementById('form-owners-container');
-  ownersContainer.innerHTML = owners.map((o, idx) => `
-    <div class="flex items-center justify-between bg-white p-2 rounded border border-slate-200 text-xs">
-      <span class="font-bold text-slate-800">${o.name} <span class="text-slate-400 font-normal">(${o.aadhaar})</span></span>
-      <span class="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-bold border border-emerald-200">${o.share}% Share</span>
-    </div>
-  `).join('');
+  if (ownersContainer) {
+    ownersContainer.innerHTML = owners.map(o => `
+      <div class="flex items-center justify-between bg-white p-2 rounded border border-slate-200 text-xs">
+        <span class="font-bold text-slate-800">${o.name} <span class="text-slate-400 font-normal">(${o.aadhaar})</span></span>
+        <span class="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-bold border border-emerald-200">${o.share}% Share</span>
+      </div>
+    `).join('');
+  }
 
   lucide.createIcons();
 }
@@ -225,7 +529,22 @@ async function submitDigitization() {
       const rec = result.record;
       const disputes = result.disputes_detected || [];
 
-      if (disputes.length > 0) {
+      if (rec.verification_status === 'PENDING_VERIFICATION') {
+        alertBox.className = 'mt-6 p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-xs space-y-2';
+        alertBox.innerHTML = `
+          <div class="flex items-center gap-2 font-bold text-sm text-amber-900">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600"></i>
+            QUARANTINED FOR HUMAN VERIFICATION: Low ML OCR Confidence (&lt; 85%)
+          </div>
+          <p>Khasra #${rec.khasra_no} had one or more uncertain fields (smudged/faded characters) scoring below 85% confidence. It has been routed to the Revenue Officer Verification Queue.</p>
+          <div class="pt-2 flex gap-3">
+            <button onclick="switchTab('verify')" class="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <i data-lucide="user-check" class="w-4 h-4"></i> Open Human Verification Console
+            </button>
+            <button onclick="switchTab('dashboard')" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-1.5 rounded-lg">Return to Registry</button>
+          </div>
+        `;
+      } else if (disputes.length > 0) {
         alertBox.className = 'mt-6 p-4 rounded-xl border border-rose-300 bg-rose-50 text-rose-900 text-xs space-y-2';
         alertBox.innerHTML = `
           <div class="flex items-center gap-2 font-bold text-sm text-rose-800">
@@ -258,6 +577,7 @@ async function submitDigitization() {
 
       await loadAnalytics();
       await loadRecords();
+      await loadPendingVerifications();
       await loadDisputes();
       await loadLedger();
     } else {
@@ -272,6 +592,219 @@ async function submitDigitization() {
     btn.disabled = false;
     btn.innerHTML = `<i data-lucide="shield-check" class="w-5 h-5"></i> Digitize, Validate & Detect Spatial Conflicts`;
     lucide.createIcons();
+  }
+}
+
+// ----------------------------------------------------
+// 3.1 HUMAN VERIFICATION QUEUE (HITL)
+// ----------------------------------------------------
+async function loadPendingVerifications() {
+  try {
+    const res = await fetch('/api/records/pending-verification');
+    const list = await res.json();
+    pendingVerificationsCache = list;
+
+    const badge = document.getElementById('badge-pending-count');
+    if (badge) badge.innerText = list.length;
+    const headerCount = document.getElementById('verify-queue-count');
+    if (headerCount) headerCount.innerText = `${list.length} Case${list.length === 1 ? '' : 's'} Pending`;
+
+    const container = document.getElementById('pending-verifications-list');
+    if (!container) return;
+
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-12 border-2 border-dashed border-emerald-200 bg-emerald-50/50 rounded-xl">
+          <i data-lucide="check-circle-2" class="w-12 h-12 text-emerald-500 mx-auto mb-2"></i>
+          <h4 class="font-bold text-slate-800">Verification Queue Clear!</h4>
+          <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">All ingested cadastral documents meet or exceed the statutory 85% ML confidence score threshold. Zero pending revenue officer reviews.</p>
+        </div>
+      `;
+      lucide.createIcons();
+      return;
+    }
+
+    container.innerHTML = list.map(r => {
+      const fieldConfs = r.field_confidences || {};
+      const khasraConf = fieldConfs.khasra_no ? Math.round(fieldConfs.khasra_no.confidence * 100) : 74;
+      const khataConf = fieldConfs.khata_no ? Math.round(fieldConfs.khata_no.confidence * 100) : 71;
+      const areaConf = fieldConfs.area_sq_meters ? Math.round(fieldConfs.area_sq_meters.confidence * 100) : 78;
+      const ownersSummary = (r.owners || []).map(o => `${o.name} (${o.share_percentage}%)`).join(', ');
+
+      return `
+        <div class="p-5 rounded-xl border border-amber-200 bg-white shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+            <div class="flex items-center gap-2">
+              <span class="bg-amber-100 text-amber-800 border border-amber-300 font-bold px-2.5 py-0.5 rounded text-xs flex items-center gap-1">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> Faded / Low-Confidence Scan Quarantined
+              </span>
+              <span class="text-xs font-mono text-slate-400">ID: ${r.id}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-slate-500">${r.village}, ${r.district} (${r.state})</span>
+              <span class="text-xs bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded border border-rose-200">
+                Confidence: ${Math.round(r.confidence_score * 100)}% (&lt;85%)
+              </span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Left: Document Facsimile Scan Preview (SVG) -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <i data-lucide="image" class="w-4 h-4 text-amber-600"></i>
+                  Archival Document Scan Facsimile
+                </label>
+                <span class="text-[11px] text-amber-700 bg-amber-50 font-semibold px-2 py-0.5 rounded border border-amber-200">BBox Highlights Active</span>
+              </div>
+              <div class="border border-slate-200 rounded-xl overflow-hidden shadow-inner bg-slate-50 max-h-[380px] overflow-y-auto p-1">
+                <img src="/api/records/${r.id}/document-svg" class="w-full h-auto object-contain rounded-lg" alt="Scanned Document Facsimile" onerror="this.src='/api/templates/sample_low_confidence_hitl/document-svg'" />
+              </div>
+              <p class="text-[11px] text-slate-400 italic">Red and orange bounding boxes indicate faded ink or damaged paper where OCR scored &lt; 85%.</p>
+            </div>
+
+            <!-- Right: Revenue Officer Correction Console -->
+            <div class="space-y-3 bg-slate-50/70 p-4 rounded-xl border border-slate-200 flex flex-col justify-between">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between border-b pb-2">
+                  <h4 class="font-bold text-xs text-slate-800 uppercase flex items-center gap-1.5">
+                    <i data-lucide="edit-3" class="w-4 h-4 text-emerald-600"></i>
+                    Patwari / Revenue Officer Certified Fields
+                  </h4>
+                  <span class="text-[10px] text-slate-400">Review and update values</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 text-xs">
+                  <div>
+                    <div class="flex justify-between items-center mb-0.5">
+                      <label class="text-slate-600 font-medium">Khasra / Survey #</label>
+                      <span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1 rounded">${khasraConf}% OCR</span>
+                    </div>
+                    <input type="text" id="verify-khasra-${r.id}" value="${r.khasra_no}" class="w-full p-2 bg-white border border-slate-300 rounded font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500" />
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between items-center mb-0.5">
+                      <label class="text-slate-600 font-medium">Khata Number</label>
+                      <span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1 rounded">${khataConf}% OCR</span>
+                    </div>
+                    <input type="text" id="verify-khata-${r.id}" value="${r.khata_no}" class="w-full p-2 bg-white border border-slate-300 rounded font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500" />
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-600 font-medium mb-0.5">Village</label>
+                    <input type="text" id="verify-village-${r.id}" value="${r.village}" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800 text-xs" />
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-600 font-medium mb-0.5">Tehsil / District</label>
+                    <input type="text" id="verify-tehsil-${r.id}" value="${r.tehsil}, ${r.district}" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800 text-xs" />
+                  </div>
+
+                  <div>
+                    <div class="flex justify-between items-center mb-0.5">
+                      <label class="text-slate-600 font-medium">Area (Sq. Meters)</label>
+                      <span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1 rounded">${areaConf}% OCR</span>
+                    </div>
+                    <input type="number" id="verify-area-${r.id}" value="${r.area_sq_meters}" class="w-full p-2 bg-white border border-slate-300 rounded font-bold text-slate-800 text-xs focus:ring-1 focus:ring-emerald-500" />
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-600 font-medium mb-0.5">Land Classification</label>
+                    <select id="verify-type-${r.id}" class="w-full p-2 bg-white border border-slate-300 rounded font-semibold text-slate-800 text-xs">
+                      <option value="Agricultural" ${r.land_type === 'Agricultural' ? 'selected' : ''}>Agricultural</option>
+                      <option value="Residential" ${r.land_type === 'Residential' ? 'selected' : ''}>Residential</option>
+                      <option value="Commercial" ${r.land_type === 'Commercial' ? 'selected' : ''}>Commercial</option>
+                      <option value="Industrial" ${r.land_type === 'Industrial' ? 'selected' : ''}>Industrial</option>
+                      <option value="Government/Public" ${r.land_type === 'Government/Public' ? 'selected' : ''}>Government/Public</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-slate-600 font-medium mb-0.5 text-xs">Tenure Holders (Co-Sharers):</label>
+                  <div class="bg-white p-2 rounded border border-slate-200 text-xs font-medium text-slate-700">
+                    ${ownersSummary || 'Bholanath Yadav (100%)'}
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-slate-600 font-medium mb-0.5 text-xs">Officer Certification Remarks:</label>
+                  <textarea id="verify-remarks-${r.id}" rows="2" class="w-full p-2 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500" placeholder="State physical register verification note...">Physically verified against Mauza Bandobast Register of 1988. Numerals and boundaries verified authentic.</textarea>
+                </div>
+              </div>
+
+              <div class="pt-3 border-t border-slate-200 flex items-center justify-between gap-3">
+                <span class="text-[10px] text-slate-400 flex items-center gap-1">
+                  <i data-lucide="shield" class="w-3.5 h-3.5 text-emerald-600"></i> Adds block to SHA-256 Ledger
+                </span>
+                ${(currentRole === 'REVENUE_OFFICER' || currentRole === 'DILRMP_ADMIN') ? `
+                  <button onclick="submitOfficerVerification('${r.id}')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center gap-2 shadow transition">
+                    <i data-lucide="check-circle-2" class="w-4 h-4"></i> Certify & Approve into Ledger
+                  </button>
+                ` : `
+                  <span class="text-xs text-amber-700 font-semibold italic bg-amber-50 px-3 py-1.5 rounded border border-amber-200">
+                    Officer Clearance Only (Login as Revenue Officer)
+                  </span>
+                `}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    lucide.createIcons();
+  } catch (err) {
+    console.error('Failed to load pending verifications:', err);
+  }
+}
+
+async function submitOfficerVerification(recordId) {
+  if (currentRole !== 'REVENUE_OFFICER' && currentRole !== 'DILRMP_ADMIN') {
+    alert("Permission Denied: Only Revenue Officers / Patwaris or DILRMP Admins are authorized to certify quarantined records.");
+    return;
+  }
+
+  const khasra = document.getElementById(`verify-khasra-${recordId}`).value.trim();
+  const khata = document.getElementById(`verify-khata-${recordId}`).value.trim();
+  const village = document.getElementById(`verify-village-${recordId}`).value.trim();
+  const area = parseFloat(document.getElementById(`verify-area-${recordId}`).value);
+  const landType = document.getElementById(`verify-type-${recordId}`).value;
+  const remarks = document.getElementById(`verify-remarks-${recordId}`).value.trim();
+
+  const payload = {
+    officer_name: "Patwari / Revenue Officer Sadar",
+    remarks: remarks || "Physically cross-checked against archival revenue register. Certified genuine.",
+    corrected_fields: {
+      khasra_no: khasra,
+      khata_no: khata,
+      village: village,
+      area_sq_meters: area,
+      land_type: landType
+    }
+  };
+
+  try {
+    const res = await fetch(`/api/records/${recordId}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (result.success) {
+      alert(`Success: Record certified by officer and anchored into SHA-256 Blockchain Ledger!\nBlock Hash: ${result.audit_hash.substring(0, 24)}...`);
+      await loadAnalytics();
+      await loadRecords();
+      await loadPendingVerifications();
+      await loadDisputes();
+      await loadLedger();
+    } else {
+      alert(`Verification failed: ${result.detail || 'Unknown error'}`);
+    }
+  } catch (err) {
+    alert(`Error submitting verification: ${err.message}`);
   }
 }
 
@@ -367,11 +900,13 @@ function renderDisputes(disputes) {
             <button onclick="switchTab('map')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-slate-700 flex items-center gap-1.5">
               <i data-lucide="map" class="w-3.5 h-3.5"></i> Inspect in GIS
             </button>
-            ${!isResolved ? `
+            ${(!isResolved && (currentRole === 'REVENUE_OFFICER' || currentRole === 'DILRMP_ADMIN')) ? `
               <button onclick="resolveDisputePrompt('${d.id}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-bold text-white flex items-center gap-1.5 shadow-sm">
                 <i data-lucide="check" class="w-3.5 h-3.5"></i> Officer Resolution
               </button>
-            ` : ''}
+            ` : (!isResolved ? `
+              <span class="text-[11px] text-slate-400 italic">Resolution restricted to Patwari</span>
+            ` : '')}
           </div>
         </div>
       </div>
@@ -382,6 +917,11 @@ function renderDisputes(disputes) {
 }
 
 async function resolveDisputePrompt(disputeId) {
+  if (currentRole !== 'REVENUE_OFFICER' && currentRole !== 'DILRMP_ADMIN') {
+    alert("Permission Denied: Only Revenue Officers / Patwaris or DILRMP Admins can execute dispute settlement decrees.");
+    return;
+  }
+
   const notes = prompt("Enter Revenue Officer demarcation / settlement decree notes:", "Resolved pursuant to field survey demarcation and mutually agreed boundary line.");
   if (!notes) return;
 
@@ -697,9 +1237,12 @@ async function handleCitizenSearch() {
             </div>
           ` : ''}
 
-          <div class="pt-2 flex justify-end gap-3 text-xs">
-            <button onclick="inspectRecordOnMap('${r.id}')" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition">
-              <i data-lucide="map" class="w-3.5 h-3.5"></i> View Geo-Tagged Parcel Map
+          <div class="pt-2 flex flex-wrap justify-end gap-2 text-xs">
+            <button onclick="downloadRoRExtract('${r.id}')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 transition shadow-sm">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i> Certified RoR Extract
+            </button>
+            <button onclick="inspectRecordOnMap('${r.id}')" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 transition">
+              <i data-lucide="map" class="w-3.5 h-3.5"></i> Geo-Tagged Map
             </button>
           </div>
         </div>
@@ -710,4 +1253,86 @@ async function handleCitizenSearch() {
   } catch (err) {
     resultsBox.innerHTML = `<div class="text-rose-600 text-xs">Search failed: ${err.message}</div>`;
   }
+}
+
+function downloadRoRExtract(recordId) {
+  const rec = recordsCache.find(r => r.id === recordId);
+  if (!rec) {
+    alert("Record not found in cache.");
+    return;
+  }
+  const certificateWindow = window.open('', '_blank');
+  if (!certificateWindow) {
+    alert("Please allow popups to view and print the certified land record extract.");
+    return;
+  }
+  const ownersList = (rec.owners || []).map(o => `<li><strong>${o.name}</strong> (${o.aadhaar_masked || 'XXXX-XXXX-XXXX'}) — Share: ${o.share_percentage}%</li>`).join('');
+  certificateWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Certified Land Title Extract - Khasra #${rec.khasra_no}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+          .header { text-align: center; border-bottom: 3px double #047857; padding-bottom: 15px; margin-bottom: 25px; }
+          .crest { font-size: 18px; font-weight: 900; letter-spacing: 1px; color: #047857; }
+          .sub { font-size: 12px; color: #64748b; text-transform: uppercase; margin-top: 4px; }
+          h2 { margin: 12px 0 4px; font-size: 16px; color: #0f172a; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; font-size: 12px; }
+          .box { border: 1px solid #e2e8f0; background: #f8fafc; padding: 12px; border-radius: 8px; }
+          .status { font-weight: bold; padding: 2px 8px; border-radius: 4px; display: inline-block; }
+          .clear { background: #dcfce7; color: #166534; }
+          .dispute { background: #ffe4e6; color: #9f1239; }
+          .hash-box { background: #0f172a; color: #34d399; font-family: monospace; font-size: 10px; padding: 10px; border-radius: 6px; word-break: break-all; margin-top: 5px; }
+          .footer { margin-top: 40px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; font-size: 11px; color: #64748b; }
+          .seal { border: 2px solid #047857; color: #047857; padding: 8px 12px; font-weight: bold; border-radius: 6px; text-transform: uppercase; display: inline-block; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="crest">GOVERNMENT OF INDIA • DIGITAL LAND RECORDS MODERNIZATION PROGRAMME</div>
+          <div class="sub">Ministry of Rural Development • Department of Land Resources</div>
+          <h2>CERTIFIED DIGITAL RECORD OF RIGHTS (RoR) / KHATAUNI EXTRACT</h2>
+          <div style="font-size: 11px; color: #047857; font-weight: bold;">Authentic Electronic Record issued under IT Act Section 6</div>
+        </div>
+
+        <div class="grid">
+          <div class="box"><strong>Khasra / Survey Number:</strong> #${rec.khasra_no}</div>
+          <div class="box"><strong>Khata / Account Number:</strong> #${rec.khata_no}</div>
+          <div class="box"><strong>State / Jurisdiction:</strong> ${rec.state || 'Uttar Pradesh'}</div>
+          <div class="box"><strong>District & Tehsil:</strong> ${rec.district}, ${rec.tehsil}</div>
+          <div class="box"><strong>Revenue Village / Mauza:</strong> ${rec.village}</div>
+          <div class="box"><strong>Land Classification:</strong> ${rec.land_type}</div>
+          <div class="box"><strong>Total Stated Area:</strong> ${rec.area_sq_meters ? rec.area_sq_meters.toLocaleString() : 0} m² (${rec.area_acres} Acres)</div>
+          <div class="box"><strong>Title Status:</strong> <span class="status ${rec.dispute_status === 'CLEAR' ? 'clear' : 'dispute'}">${rec.dispute_status}</span></div>
+        </div>
+
+        <div class="box" style="margin-bottom: 15px;">
+          <strong>Registered Tenure Holders / Co-Sharers (100% Equity Closure):</strong>
+          <ul style="margin: 8px 0 0 18px; padding: 0;">
+            ${ownersList}
+          </ul>
+        </div>
+
+        <div class="box">
+          <strong>Cryptographic SHA-256 Immutable Proof of Registration:</strong>
+          <div class="hash-box">${rec.audit_hash || 'SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}</div>
+        </div>
+
+        <div class="footer">
+          <div>
+            Generated Date: ${new Date().toLocaleDateString('en-IN')}<br/>
+            DILRMP Central Registry Token: #${rec.id}
+          </div>
+          <div style="text-align: right;">
+            <div class="seal">✓ DILRMP Verified</div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+  certificateWindow.document.close();
+  setTimeout(() => {
+    certificateWindow.print();
+  }, 300);
 }

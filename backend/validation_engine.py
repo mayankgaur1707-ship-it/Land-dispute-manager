@@ -152,8 +152,26 @@ def validate_land_record(candidate: Dict[str, Any], existing_records: List[Dict[
             confidence -= 0.3
             status = DisputeStatus.WARNING
 
+    # 4. Field-level Confidence & Human-in-the-Loop Flagging
+    field_confidences = candidate.get("field_confidences", {})
+    has_low_confidence_field = False
+    verification_status = candidate.get("verification_status") or "AUTO_VERIFIED"
+
+    for f_name, f_data in field_confidences.items():
+        conf_val = f_data.get("confidence", 1.0) if isinstance(f_data, dict) else getattr(f_data, "confidence", 1.0)
+        is_low = f_data.get("is_low_confidence", False) if isinstance(f_data, dict) else getattr(f_data, "is_low_confidence", False)
+        if is_low or conf_val < 0.85:
+            has_low_confidence_field = True
+            dispute_tags.append(f"Uncertain OCR: Field '{f_name}' confidence {int(conf_val*100)}% requires manual review")
+            confidence = min(confidence, conf_val)
+
+    if has_low_confidence_field and verification_status != "VERIFIED_BY_OFFICER":
+        verification_status = "PENDING_VERIFICATION"
+        if status == DisputeStatus.CLEAR:
+            status = DisputeStatus.WARNING
+
     confidence = max(0.05, min(1.0, round(confidence, 2)))
     if status == DisputeStatus.CLEAR and dispute_tags:
         status = DisputeStatus.WARNING
 
-    return status.value, dispute_tags, created_disputes, confidence
+    return status.value, dispute_tags, created_disputes, confidence, verification_status
