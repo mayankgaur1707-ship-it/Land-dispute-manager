@@ -9,10 +9,22 @@ from backend.database import init_db
 from backend.seed_data import seed_database
 from backend.routes import router as api_router
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        init_db()
+        seed_database()
+    except Exception as e:
+        print(f"Notice during lifespan startup: {e}")
+    yield
+
 app = FastAPI(
     title="Intelligent Land Record Digitization and Validation System",
     description="Govt of India - Ministry of Rural Development | AI-Powered Land Records & Dispute Manager",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS
@@ -28,11 +40,13 @@ app.add_middleware(
 app.include_router(api_router)
 
 # Mount frontend static files
-frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+frontend_dir = os.path.join(base_dir, "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 @app.get("/")
+@app.get("/index.html")
 def serve_index():
     index_path = os.path.join(frontend_dir, "index.html")
     if os.path.exists(index_path):
@@ -47,10 +61,18 @@ def serve_landing():
         return FileResponse(landing_path)
     return FileResponse(os.path.join(frontend_dir, "index.html"))
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
 @app.on_event("startup")
 def startup_event():
-    init_db()
-    seed_database()
+    try:
+        init_db()
+        seed_database()
+    except Exception as e:
+        print(f"Notice during startup_event: {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

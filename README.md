@@ -111,3 +111,34 @@ python -m unittest discover tests
 - **Revenue Officer / Tehsildar**: Inspect flagged boundary overlaps, compare claimed boundary coordinates, and issue mutation or demarcation orders.
 - **Farmer / Citizen**: Search land titles by Khasra number or name, verify unencumbered ownership, and view geo-tagged parcel boundaries.
 - **Bank / Lending Officer**: Instantly check land collateral for active disputes, legal encumbrances, or double mortgages before sanctioning loans.
+
+---
+
+## ☁️ Deploying to Vercel
+
+This repository is pre-configured for **zero-friction Vercel deployment** using `@vercel/python` serverless architecture:
+
+### Option A: Import via Vercel Web Dashboard (Recommended)
+1. Push your repository to GitHub.
+2. Log in to [Vercel](https://vercel.com) and click **"Add New Project"**.
+3. Import this repository (`Land-dispute-manager`).
+4. Keep the default settings (Framework Preset: **Other**, Root Directory: `./`).
+5. Click **"Deploy"**. Vercel will automatically detect `vercel.json`, install dependencies from `requirements.txt`, and deploy the application.
+
+### Option B: Deploy via Vercel CLI
+```bash
+# 1. Install Vercel CLI
+npm install -g vercel
+
+# 2. Login to your account
+vercel login
+
+# 3. Deploy to production
+vercel --prod
+```
+
+### Serverless Architecture Highlights on Vercel
+- **Pre-configured `vercel.json`**: Explicitly maps all routes (`/(.*)`) to the FastAPI ASGI application in `main.py`.
+- **Auto-Initializing Temporary SQLite Store**: Gracefully handles Vercel's read-only serverless runtime by copying pre-seeded cadastral records to system temp space (`/tmp/land_records.db`) with full transactional write and audit capabilities.
+- **Embedded Static Assets**: Frontend HTML, CSS, JavaScript, and Leaflet cadastral assets are served directly through FastAPI static mounts without requiring a separate web server.
+

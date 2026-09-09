@@ -3,11 +3,65 @@ import json
 import os
 from typing import List, Optional, Dict, Any
 
-DB_PATH = os.environ.get("LAND_DB_PATH", "land_records.db")
+import tempfile
+
+def get_db_path() -> str:
+    if os.environ.get("LAND_DB_PATH"):
+        return os.environ.get("LAND_DB_PATH")
+    
+    # Check if running in Vercel or read-only serverless environment
+    is_serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    default_db = os.path.join(base_dir, "land_records.db")
+    
+    if is_serverless:
+        tmp_db = os.path.join(tempfile.gettempdir(), "land_records.db")
+        if not os.path.exists(tmp_db) and os.path.exists(default_db):
+            try:
+                import shutil
+                shutil.copy2(default_db, tmp_db)
+            except Exception as e:
+                print(f"Notice: Could not copy initial DB to temp dir: {e}")
+        return tmp_db
+    
+    return default_db
+
+DB_PATH = get_db_path()
+_db_initialized = False
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    global _db_initialized
+    db_file = get_db_path()
+    
+    # If target directory is read-only, safely fallback to system temp dir
+    db_dir = os.path.dirname(db_file) or "."
+    temp_target = os.path.join(tempfile.gettempdir(), "land_records.db")
+    if not os.access(db_dir, os.W_OK) and db_file != temp_target:
+        db_file = temp_target
+        if not os.path.exists(db_file):
+            base_db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "land_records.db")
+            if os.path.exists(base_db):
+                try:
+                    import shutil
+                    shutil.copy2(base_db, db_file)
+                except Exception:
+                    pass
+
+    conn = sqlite3.connect(db_file)
     conn.row_factory = sqlite3.Row
+
+    if not _db_initialized:
+        _db_initialized = True
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='records'")
+            if not cursor.fetchone():
+                init_db()
+                from backend.seed_data import seed_database
+                seed_database()
+        except Exception as e:
+            print(f"Notice during auto-init DB: {e}")
+
     return conn
 
 def init_db():

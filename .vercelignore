@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+.git
+.agents
+.gemini
+tests
+*.log
