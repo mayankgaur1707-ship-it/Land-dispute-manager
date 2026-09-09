@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function initApp() {
+  await initAuth();
   setupRoleSelector();
   
   // Initialize AI Chatbot immediately so it is available right away on all pages
@@ -2512,4 +2513,391 @@ function clearDedicatedChat() {
     { type: "NAVIGATE_TAB", tab: "disputes", label: "⚖️ Inspect Disputes Engine" }
   ], 'dedicated-chat-messages');
 }
+
+// =========================================================================
+// AUTHENTICATION & SECURITY SYSTEM (GMAIL & PASSWORD)
+// =========================================================================
+
+const AUTH_TOKEN_KEY = 'bhoomi_auth_token';
+const AUTH_USER_KEY = 'bhoomi_auth_user';
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+function getAuthUser() {
+  const u = localStorage.getItem(AUTH_USER_KEY);
+  try {
+    return u ? JSON.parse(u) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setAuthSession(token, user) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  updateAuthUI();
+}
+
+function clearAuthSession() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  updateAuthUI();
+}
+
+async function initAuth() {
+  const token = getAuthToken();
+  if (!token) {
+    updateAuthUI();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const user = await res.json();
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      // Automatically sync role selector if in operational app
+      if (user.role && typeof handleRoleChange === 'function') {
+        currentRole = user.role;
+        const selector = document.getElementById('role-selector');
+        if (selector) selector.value = user.role;
+      }
+    } else {
+      // Token invalid or expired
+      clearAuthSession();
+    }
+  } catch (e) {
+    console.warn('Auth check skipped (offline or network error):', e);
+  }
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const user = getAuthUser();
+  const containers = document.querySelectorAll('#nav-auth-container');
+  if (!containers || containers.length === 0) return;
+
+  containers.forEach(container => {
+    if (user) {
+      // User is logged in
+      const roleLabels = {
+        'CITIZEN_FARMER': 'Citizen',
+        'REVENUE_OFFICER': 'Patwari',
+        'BANK_OFFICER': 'Banker',
+        'DILRMP_ADMIN': 'Admin'
+      };
+      const shortRole = roleLabels[user.role] || user.role;
+      
+      container.innerHTML = `
+        <div class="relative group">
+          <div class="user-profile-badge">
+            <div class="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs">
+              ${(user.full_name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div class="text-left hidden sm:block">
+              <div class="leading-tight text-xs text-slate-100 font-bold max-w-[130px] truncate">${escapeHtml(user.full_name)}</div>
+              <div class="leading-none text-[10px] text-emerald-400 font-medium">${shortRole}</div>
+            </div>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
+          </div>
+          <!-- Dropdown menu -->
+          <div class="absolute right-0 mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 hidden group-hover:block z-50 animate-in fade-in slide-in-from-top-2">
+            <div class="px-3 py-2 border-b border-slate-100">
+              <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(user.full_name)}</p>
+              <p class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(user.email)}</p>
+              <span class="inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">${user.role}</span>
+            </div>
+            <div class="p-1">
+              <button onclick="handleSignOut()" class="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition flex items-center gap-2">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      // Guest state
+      container.innerHTML = `
+        <button onclick="openAuthModal('signin')" class="text-xs font-semibold text-slate-700 hover:text-slate-950 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1.5 border border-slate-200 shadow-xs bg-white">
+          <i data-lucide="log-in" class="w-3.5 h-3.5 text-slate-500"></i>
+          <span>Sign In</span>
+        </button>
+        <button onclick="openAuthModal('signup')" class="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs">
+          <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Sign Up</span>
+        </button>
+      `;
+    }
+  });
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+function openAuthModal(tab = 'signin') {
+  const overlay = document.getElementById('auth-modal-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  hideAuthAlert();
+  switchAuthTab(tab);
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAuthModal() {
+  const overlay = document.getElementById('auth-modal-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  hideAuthAlert();
+}
+
+function switchAuthTab(tab) {
+  const signinBtn = document.getElementById('auth-tab-signin-btn');
+  const signupBtn = document.getElementById('auth-tab-signup-btn');
+  const signinForm = document.getElementById('auth-signin-form');
+  const signupForm = document.getElementById('auth-signup-form');
+  hideAuthAlert();
+
+  if (tab === 'signup') {
+    if (signinBtn) signinBtn.classList.remove('active');
+    if (signupBtn) signupBtn.classList.add('active');
+    if (signinForm) signinForm.classList.add('hidden');
+    if (signupForm) signupForm.classList.remove('hidden');
+    const nameInput = document.getElementById('signup-fullname');
+    if (nameInput) nameInput.focus();
+  } else {
+    if (signupBtn) signupBtn.classList.remove('active');
+    if (signinBtn) signinBtn.classList.add('active');
+    if (signupForm) signupForm.classList.add('hidden');
+    if (signinForm) signinForm.classList.remove('hidden');
+    const emailInput = document.getElementById('signin-email');
+    if (emailInput) emailInput.focus();
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function togglePasswordVisibility(inputId, iconId) {
+  const input = document.getElementById(inputId);
+  const icon = document.getElementById(iconId);
+  if (!input) return;
+
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (icon) icon.setAttribute('data-lucide', 'eye-off');
+  } else {
+    input.type = 'password';
+    if (icon) icon.setAttribute('data-lucide', 'eye');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function showAuthAlert(message, type = 'error') {
+  const box = document.getElementById('auth-alert-box');
+  if (!box) return;
+  box.classList.remove('hidden', 'bg-rose-50', 'text-rose-700', 'border-rose-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+  
+  if (type === 'error') {
+    box.classList.add('bg-rose-50', 'text-rose-700', 'border-rose-200');
+  } else {
+    box.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+  }
+  box.innerHTML = `
+    <div class="flex items-center gap-2">
+      <i data-lucide="${type === 'error' ? 'alert-circle' : 'check-circle'}" class="w-4 h-4 shrink-0"></i>
+      <span>${escapeHtml(message)}</span>
+    </div>
+  `;
+  if (window.lucide) lucide.createIcons();
+}
+
+function hideAuthAlert() {
+  const box = document.getElementById('auth-alert-box');
+  if (box) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+  }
+}
+
+function fillDemoCredentials(role) {
+  switchAuthTab('signin');
+  const emailInput = document.getElementById('signin-email');
+  const passwordInput = document.getElementById('signin-password');
+  
+  const creds = {
+    'citizen': { email: 'citizen@gmail.com', pass: 'Bhoomi@2026' },
+    'officer': { email: 'officer@gmail.com', pass: 'Bhoomi@2026' },
+    'banker': { email: 'banker@gmail.com', pass: 'Bhoomi@2026' },
+    'admin': { email: 'admin@gmail.com', pass: 'Bhoomi@2026' }
+  };
+  
+  const c = creds[role] || creds['citizen'];
+  if (emailInput) emailInput.value = c.email;
+  if (passwordInput) passwordInput.value = c.pass;
+  
+  showAuthAlert(`Demo credentials filled for ${role.toUpperCase()} (${c.email}). Click Sign In!`, 'success');
+}
+
+async function handleSignInSubmit(event) {
+  event.preventDefault();
+  hideAuthAlert();
+  
+  const email = document.getElementById('signin-email')?.value.trim();
+  const password = document.getElementById('signin-password')?.value;
+  const submitBtn = document.getElementById('signin-submit-btn');
+
+  if (!email || !password) {
+    showAuthAlert('Please enter both email and password.');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `
+      <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+      <span>Authenticating...</span>
+    `;
+  }
+
+  try {
+    const res = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      showAuthAlert(data.detail || 'Failed to sign in. Please verify your email and password.');
+      return;
+    }
+
+    // Success
+    setAuthSession(data.access_token, data.user);
+    showAuthAlert(`Welcome back, ${data.user.full_name}!`, 'success');
+    
+    setTimeout(() => {
+      closeAuthModal();
+      if (typeof showNotification === 'function') {
+        showNotification(`Signed in as ${data.user.full_name} (${data.user.role})`);
+      }
+    }, 600);
+  } catch (err) {
+    showAuthAlert('Network error while connecting to authentication service.');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `
+        <i data-lucide="log-in" class="w-4 h-4"></i>
+        <span>Sign In to BHOOMI</span>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+async function handleSignUpSubmit(event) {
+  event.preventDefault();
+  hideAuthAlert();
+
+  const fullName = document.getElementById('signup-fullname')?.value.trim();
+  const email = document.getElementById('signup-email')?.value.trim();
+  const role = document.getElementById('signup-role')?.value;
+  const phone = document.getElementById('signup-phone')?.value.trim() || null;
+  const password = document.getElementById('signup-password')?.value;
+  const confirmPassword = document.getElementById('signup-confirm-password')?.value;
+  const submitBtn = document.getElementById('signup-submit-btn');
+
+  if (!fullName || !email || !password) {
+    showAuthAlert('Please fill in all required fields.');
+    return;
+  }
+
+  if (password.length < 6) {
+    showAuthAlert('Password must be at least 6 characters long.');
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showAuthAlert('Passwords do not match. Please re-enter your password.');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `
+      <span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+      <span>Registering Account...</span>
+    `;
+  }
+
+  try {
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: fullName,
+        email: email,
+        role: role,
+        phone: phone,
+        password: password
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      showAuthAlert(data.detail || 'Registration failed. Please check your details.');
+      return;
+    }
+
+    // Success
+    setAuthSession(data.access_token, data.user);
+    showAuthAlert('Account created successfully! Logging you in...', 'success');
+
+    setTimeout(() => {
+      closeAuthModal();
+      if (typeof showNotification === 'function') {
+        showNotification(`Welcome to BHOOMI, ${data.user.full_name}!`);
+      }
+    }, 700);
+  } catch (err) {
+    showAuthAlert('Network error while registering account.');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `
+        <i data-lucide="user-check" class="w-4 h-4"></i>
+        <span>Create Account & Enter System</span>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+async function handleSignOut() {
+  try {
+    await fetch('/api/auth/signout', { method: 'POST' });
+  } catch (e) {
+    // Ignore network error on signout
+  }
+  clearAuthSession();
+  if (typeof showNotification === 'function') {
+    showNotification('You have been signed out successfully.');
+  }
+}
+
+function authenticatedFetch(url, options = {}) {
+  const token = getAuthToken();
+  const headers = options.headers || {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
 

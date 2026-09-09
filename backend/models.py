@@ -135,3 +135,29 @@ class AuditBlock(BaseModel):
     prev_hash: str
     current_hash: str
 
+class UserSignUpRequest(BaseModel):
+    email: str = Field(..., description="Valid Gmail or official email address")
+    password: str = Field(..., min_length=6, description="Password (min 6 characters)")
+    full_name: str = Field(..., min_length=2, description="Full Name of the user")
+    role: Optional[UserRole] = UserRole.CITIZEN_FARMER
+    phone: Optional[str] = None
+
+class UserSignInRequest(BaseModel):
+    email: str = Field(..., description="Registered email/Gmail address")
+    password: str = Field(..., description="Password")
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    role: UserRole
+    phone: Optional[str] = None
+    created_at: str
+    last_login: Optional[str] = None
+    is_active: bool = True
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+

@@ -156,6 +156,44 @@ def init_db():
     )
     """)
     
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'CITIZEN_FARMER',
+        phone TEXT,
+        created_at TEXT NOT NULL,
+        last_login TEXT,
+        is_active INTEGER DEFAULT 1
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    
+    # Check and seed default demo accounts if no users exist
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        try:
+            from backend.auth import hash_password
+            from datetime import datetime
+            demo_users = [
+                ("USR-CITIZEN-001", "citizen@gmail.com", "Rajesh Sharma (Citizen)", "CITIZEN_FARMER", "+91 98765 43210"),
+                ("USR-OFFICER-001", "officer@gmail.com", "Anand Swaroop (Revenue Officer)", "REVENUE_OFFICER", "+91 94150 12345"),
+                ("USR-BANKER-001", "banker@gmail.com", "Pooja Verma (Chief Lending Officer)", "BANK_OFFICER", "+91 98390 67890"),
+                ("USR-ADMIN-001", "admin@gmail.com", "Vikramaditya (DILRMP Admin)", "DILRMP_ADMIN", "+91 99999 88888")
+            ]
+            now_iso = datetime.now().isoformat()
+            for uid, uemail, uname, urole, uphone in demo_users:
+                pwd_hash, salt = hash_password("Bhoomi@2026")
+                cursor.execute("""
+                INSERT INTO users (id, email, full_name, password_hash, salt, role, phone, created_at, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """, (uid, uemail.lower(), uname, pwd_hash, salt, urole, uphone, now_iso))
+        except Exception as seed_err:
+            print(f"Notice: Demo user seeding skipped: {seed_err}")
+
     conn.commit()
     conn.close()
 
@@ -363,3 +401,59 @@ def get_latest_audit_block() -> Optional[Dict[str, Any]]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+# ================= USER OPERATIONS =================
+
+def create_user(user_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Inserts a new user record into SQLite users table."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO users (id, email, full_name, password_hash, salt, role, phone, created_at, last_login, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        user_dict["id"],
+        user_dict["email"].strip().lower(),
+        user_dict["full_name"].strip(),
+        user_dict["password_hash"],
+        user_dict["salt"],
+        user_dict.get("role", "CITIZEN_FARMER"),
+        user_dict.get("phone"),
+        user_dict["created_at"],
+        user_dict.get("last_login"),
+        1 if user_dict.get("is_active", True) else 0
+    ))
+    conn.commit()
+    conn.close()
+    return get_user_by_id(user_dict["id"])
+
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a user row by case-insensitive email address."""
+    if not email:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email.strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a user row by unique user ID."""
+    if not user_id:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def update_user_last_login(user_id: str):
+    """Updates the last_login timestamp for a user upon successful authentication."""
+    from datetime import datetime
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+    conn.commit()
+    conn.close()

@@ -1,23 +1,29 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Depends, Header
 from fastapi.responses import Response
 
 from backend.models import (
     LandRecordCreate, LandRecord, DisputeRecord,
-    DisputeStatus, DisputeType, VerificationStatus, HumanVerificationSubmission
+    DisputeStatus, DisputeType, VerificationStatus, HumanVerificationSubmission,
+    UserSignUpRequest, UserSignInRequest, UserResponse, AuthTokenResponse
 )
 from backend.database import (
     get_all_records, get_record_by_id, save_record,
     get_all_disputes, save_dispute, update_dispute_status,
-    get_audit_ledger, get_pending_verifications, get_state_district_analytics
+    get_audit_ledger, get_pending_verifications, get_state_district_analytics,
+    create_user, get_user_by_email, get_user_by_id, update_user_last_login
 )
 from backend.validation_engine import validate_land_record
 from backend.ocr_service import extract_land_record_from_text, get_sample_templates, generate_document_svg, SAMPLE_TEMPLATES
 from backend.blockchain_audit import record_audit_event, verify_audit_ledger, calculate_sha256
 from backend.ai_assistant import process_chat_message
 from backend.land_faq_kb import FAQ_CATEGORIES, POPULAR_FAQS, FAQS_BY_ID, search_faqs
+from backend.auth import (
+    hash_password, verify_password, create_access_token,
+    validate_email_format, get_current_user_required, get_current_user_optional
+)
 
 router = APIRouter(prefix="/api")
 
@@ -584,5 +590,164 @@ def get_faq_by_id(faq_id: str):
     if faq_id not in FAQS_BY_ID:
         raise HTTPException(status_code=404, detail=f"FAQ with ID '{faq_id}' not found")
     return FAQS_BY_ID[faq_id]
+
+# -------------------------------------------------------------------------
+# SECURITY & AUTHENTICATION ENDPOINTS (GMAIL & PASSWORD)
+# -------------------------------------------------------------------------
+
+@router.post("/auth/signup", response_model=AuthTokenResponse)
+def sign_up(payload: UserSignUpRequest):
+    """
+    Registers a new user using a Gmail or official email address and password.
+    Hashes password using PBKDF2-HMAC-SHA256 with 100,000 iterations.
+    """
+    clean_email = payload.email.strip().lower()
+    
+    if not validate_email_format(clean_email):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid email format. Please provide a valid email address (e.g., yourname@gmail.com)."
+        )
+    
+    if len(payload.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters long."
+        )
+        
+    existing_user = get_user_by_email(clean_email)
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="An account with this email already exists. Please sign in instead."
+        )
+    
+    user_id = f"USR-{uuid.uuid4().hex[:8].upper()}"
+    pwd_hash, salt = hash_password(payload.password)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    user_data = {
+        "id": user_id,
+        "email": clean_email,
+        "full_name": payload.full_name.strip(),
+        "password_hash": pwd_hash,
+        "salt": salt,
+        "role": payload.role.value if payload.role else "CITIZEN_FARMER",
+        "phone": payload.phone.strip() if payload.phone else None,
+        "created_at": now_iso,
+        "last_login": now_iso,
+        "is_active": True
+    }
+    
+    saved_user = create_user(user_data)
+    access_token = create_access_token(
+        user_id=user_id,
+        email=clean_email,
+        role=saved_user["role"],
+        expires_in_hours=72
+    )
+    
+    user_resp = UserResponse(
+        id=saved_user["id"],
+        email=saved_user["email"],
+        full_name=saved_user["full_name"],
+        role=saved_user["role"],
+        phone=saved_user.get("phone"),
+        created_at=saved_user["created_at"],
+        last_login=saved_user.get("last_login"),
+        is_active=bool(saved_user.get("is_active", 1))
+    )
+    
+    # Audit trail log for new user registration
+    try:
+        record_audit_event(
+            action="USER_SIGNUP",
+            record_id=user_id,
+            details={
+                "email": clean_email,
+                "role": user_resp.role,
+                "timestamp": now_iso
+            }
+        )
+    except Exception:
+        pass
+    
+    return AuthTokenResponse(access_token=access_token, user=user_resp)
+
+@router.post("/auth/signin", response_model=AuthTokenResponse)
+def sign_in(payload: UserSignInRequest):
+    """
+    Authenticates a user with Gmail/email and password using constant-time verification.
+    """
+    clean_email = payload.email.strip().lower()
+    user = get_user_by_email(clean_email)
+    
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password. Please verify your credentials."
+        )
+        
+    if not user.get("is_active", 1):
+        raise HTTPException(
+            status_code=403,
+            detail="This account has been deactivated. Please contact DILRMP system administrator."
+        )
+        
+    is_valid = verify_password(payload.password, user["salt"], user["password_hash"])
+    if not is_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password. Please verify your credentials."
+        )
+        
+    update_user_last_login(user["id"])
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    access_token = create_access_token(
+        user_id=user["id"],
+        email=clean_email,
+        role=user["role"],
+        expires_in_hours=72
+    )
+    
+    user_resp = UserResponse(
+        id=user["id"],
+        email=user["email"],
+        full_name=user["full_name"],
+        role=user["role"],
+        phone=user.get("phone"),
+        created_at=user["created_at"],
+        last_login=now_iso,
+        is_active=bool(user.get("is_active", 1))
+    )
+    
+    return AuthTokenResponse(access_token=access_token, user=user_resp)
+
+@router.get("/auth/me", response_model=UserResponse)
+def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user_required)):
+    """
+    Returns the authenticated user's profile based on the Bearer token.
+    """
+    user = get_user_by_id(current_user.get("sub", ""))
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found or has been removed.")
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        full_name=user["full_name"],
+        role=user["role"],
+        phone=user.get("phone"),
+        created_at=user["created_at"],
+        last_login=user.get("last_login"),
+        is_active=bool(user.get("is_active", 1))
+    )
+
+@router.post("/auth/signout")
+def sign_out():
+    """
+    Terminates client session.
+    """
+    return {"status": "success", "message": "Successfully signed out of BHOOMI system."}
 
 
