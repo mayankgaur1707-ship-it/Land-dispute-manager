@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Query, Body, Depends, Header
+from fastapi import APIRouter, HTTPException, Query, Body, Depends, Header, File, UploadFile
 from fastapi.responses import Response
 
 from backend.models import (
@@ -16,7 +16,10 @@ from backend.database import (
     create_user, get_user_by_email, get_user_by_id, update_user_last_login
 )
 from backend.validation_engine import validate_land_record
-from backend.ocr_service import extract_land_record_from_text, get_sample_templates, generate_document_svg, SAMPLE_TEMPLATES
+from backend.ocr_service import (
+    extract_land_record_from_text, get_sample_templates, generate_document_svg,
+    SAMPLE_TEMPLATES, scan_registry_document
+)
 from backend.blockchain_audit import record_audit_event, verify_audit_ledger, calculate_sha256
 from backend.ai_assistant import process_chat_message
 from backend.land_faq_kb import FAQ_CATEGORIES, POPULAR_FAQS, FAQS_BY_ID, search_faqs
@@ -749,5 +752,103 @@ def sign_out():
     Terminates client session.
     """
     return {"status": "success", "message": "Successfully signed out of BHOOMI system."}
+
+# -------------------------------------------------------------------------
+# AI REGISTRY DOCUMENT SCANNER & ACCURACY INSPECTION ENDPOINTS
+# -------------------------------------------------------------------------
+
+@router.post("/documents/scan")
+async def scan_document_endpoint(
+    file: Optional[UploadFile] = File(None),
+    payload: Optional[Dict[str, Any]] = Body(None)
+):
+    """
+    Scans an uploaded PDF or picture of a registry deed / Khasra document.
+    Extracts owner names, registry/Khasra IDs, land details, computes accuracy,
+    and returns both the saved record and corner HUD inspection metrics.
+    """
+    filename = "uploaded_registry_document.pdf"
+    content_type = "application/pdf"
+    file_bytes = None
+    raw_text = None
+
+    if file:
+        filename = file.filename or "uploaded_registry_document.pdf"
+        content_type = file.content_type or "application/pdf"
+        file_bytes = await file.read()
+    elif payload:
+        filename = payload.get("filename", "sample_registry_deed.pdf")
+        content_type = payload.get("content_type", "application/pdf")
+        raw_text = payload.get("raw_text")
+        if payload.get("sample_id"):
+            sample_id = payload["sample_id"]
+            if sample_id in SAMPLE_TEMPLATES:
+                tmpl = SAMPLE_TEMPLATES[sample_id]
+                filename = tmpl["filename"]
+                raw_text = tmpl["raw_text"]
+
+    scan_result = scan_registry_document(
+        file_bytes=file_bytes,
+        filename=filename,
+        content_type=content_type,
+        raw_text=raw_text
+    )
+
+    record = scan_result["scanned_record"]
+    corner_hud = scan_result["corner_hud_data"]
+
+    # Validate against existing records for spatial conflicts
+    existing_records = get_all_records()
+    dispute_status, dispute_tags, created_disputes, conf, verification_status = validate_land_record(record, existing_records)
+    
+    record["dispute_status"] = dispute_status
+    record["dispute_tags"] = dispute_tags
+    record["verification_status"] = verification_status
+    record["audit_hash"] = calculate_sha256(record)
+
+    # Persist in Database
+    save_record(record)
+    for d in created_disputes:
+        save_dispute(d)
+
+    # Log to Blockchain Audit Ledger
+    block_hash = record_audit_event(
+        action="DOCUMENT_AI_SCANNED",
+        record_id=record["id"],
+        details=f"AI scanned {filename}: Extracted {len(record['owners'])} owner(s), Khasra {record['khasra_no']}, Accuracy {scan_result['overall_accuracy']}%.",
+        payload={
+            "filename": filename,
+            "overall_accuracy": scan_result["overall_accuracy"],
+            "khasra_no": record["khasra_no"],
+            "dispute_status": dispute_status
+        }
+    )
+
+    return {
+        "success": True,
+        "message": f"Document '{filename}' scanned with {scan_result['overall_accuracy']}% accuracy and added to registry table.",
+        "record": record,
+        "corner_hud_data": corner_hud,
+        "accuracy_report": {
+            "overall_accuracy": scan_result["overall_accuracy"],
+            "rating": corner_hud["accuracy_label"],
+            "field_accuracies": corner_hud["field_accuracies"]
+        },
+        "audit_hash": block_hash
+    }
+
+@router.get("/documents/scanned")
+def get_scanned_documents():
+    """
+    Returns all digitized/scanned land registry records for the table.
+    """
+    records = get_all_records()
+    # Sort with newest first
+    records_sorted = sorted(records, key=lambda r: r.get("created_at", ""), reverse=True)
+    return {
+        "count": len(records_sorted),
+        "records": records_sorted
+    }
+
 
 

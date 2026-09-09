@@ -110,6 +110,11 @@
         <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600"></i> AI Sahayak
         <span class="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">Live AI</span>
       </button>
+      <button onclick="openRegistryScannerModal()" id="nav-btn-scanner" class="ml-auto px-3.5 py-2 text-xs font-bold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm border border-indigo-500">
+        <i data-lucide="scan-line" class="w-4 h-4 text-indigo-200"></i>
+        <span>Scan Registry Deed</span>
+        <span class="bg-indigo-400 text-indigo-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">AI Window</span>
+      </button>
     </div>
   </nav>
 
@@ -348,6 +353,11 @@
             </h2>
             <p class="text-xs text-slate-500 mt-0.5">Extracts structured cadastral entities from Hindi, Marathi, Telugu, and English records with field-level confidence scoring.</p>
           </div>
+          <button onclick="openRegistryScannerModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2">
+            <i data-lucide="scan-line" class="w-4 h-4 text-indigo-200"></i>
+            <span>Open Registry Scanner Window</span>
+            <span class="bg-indigo-400 text-indigo-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">NEW</span>
+          </button>
         </div>
 
         <!-- Sample Deed Quick Pickers -->
@@ -1080,6 +1090,226 @@
     </div>
   </div>
 
+  <!-- ================= AI LAND REGISTRY DOCUMENT SCANNER WINDOW MODAL ================= -->
+  <div id="registry-scanner-modal-overlay" class="scanner-modal-overlay" onclick="if(event.target === this) closeRegistryScannerModal()">
+    <div class="scanner-modal-card">
+      <!-- Modal Header -->
+      <div class="tricolor-stripe w-full"></div>
+      <div class="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-400 flex items-center justify-center font-bold shadow-inner">
+            <i data-lucide="scan-line" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm sm:text-base font-bold text-white tracking-wide">AI Land Registry Document Scanner</h2>
+              <span class="text-[10px] font-bold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">Neural OCR v2.4</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">Upload a PDF or Picture of your Registry Deed / 7-12 / Khasra to auto-extract Party Names, IDs, and Cadastral details into the database</p>
+          </div>
+        </div>
+        <button onclick="closeRegistryScannerModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition" title="Close Window">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-4 sm:p-6 overflow-y-auto max-h-[calc(90vh-130px)] space-y-6 bg-slate-50/50">
+        
+        <!-- Upload & Sample Selection Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <!-- Dropzone Card (7 cols) -->
+          <div class="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="upload-cloud" class="w-4 h-4 text-indigo-600"></i>
+                  Upload Document (Picture / PDF)
+                </span>
+                <span class="text-[11px] text-slate-500">PDF, JPG, PNG, WEBP up to 25MB</span>
+              </div>
+
+              <!-- Drag & Drop Zone -->
+              <div id="scanner-dropzone" class="scanner-dropzone group" onclick="document.getElementById('scanner-file-input').click()">
+                <input type="file" id="scanner-file-input" accept=".pdf,image/png,image/jpeg,image/webp" class="hidden" onchange="handleScannerFileSelect(event)">
+                <div id="scanner-dropzone-prompt" class="flex flex-col items-center justify-center py-2">
+                  <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3 group-hover:scale-110 transition duration-200">
+                    <i data-lucide="file-up" class="w-6 h-6"></i>
+                  </div>
+                  <p class="text-sm font-semibold text-slate-700">
+                    Drag & drop your registry deed here, or <span class="text-indigo-600 underline">browse</span>
+                  </p>
+                  <p class="text-xs text-slate-400 mt-1">
+                    Supports Sale Deeds, 7/12 Extracts, Jamabandi, Dharani Pahani, Gift Deeds & Partition Memorandums
+                  </p>
+                </div>
+
+                <!-- Selected File Preview -->
+                <div id="scanner-file-preview" class="hidden flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl p-3 text-left">
+                  <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0">
+                      <i data-lucide="file-text" class="w-5 h-5"></i>
+                    </div>
+                    <div class="truncate">
+                      <div id="scanner-preview-filename" class="text-xs font-bold text-slate-800 truncate">deed_document.pdf</div>
+                      <div id="scanner-preview-size" class="text-[11px] text-slate-500">1.4 MB • Ready for AI extraction</div>
+                    </div>
+                  </div>
+                  <button type="button" onclick="clearSelectedScannerFile(event)" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Remove file">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Execution Action Bar -->
+            <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+              <div class="text-xs text-slate-500 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>AI Cadastre & Accuracy Engine ready</span>
+              </div>
+              <button id="btn-execute-scan" onclick="executeDocumentScan()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2">
+                <i data-lucide="zap" class="w-4 h-4 text-amber-300"></i>
+                <span>Scan & Extract Details</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick 1-Click Sample Deeds Card (5 cols) -->
+          <div class="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                  Or Test with Sample Deeds
+                </span>
+                <span class="text-[10px] bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded">1-Click Test</span>
+              </div>
+              <p class="text-xs text-slate-500 mb-3">Instant demonstration with multilingual authentic registry deeds:</p>
+              
+              <div class="space-y-2">
+                <div onclick="loadSampleDeedForScanning('sample_clear_105')" class="sample-deed-chip w-full justify-between hover:border-indigo-400 cursor-pointer p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/40 transition">
+                  <div class="flex items-center gap-2.5 text-left">
+                    <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center">105</span>
+                    <div>
+                      <div class="text-xs font-bold text-slate-800">Clear Sale Deed • Khasra 105</div>
+                      <div class="text-[10px] text-slate-500">Rameshwar Prasad • 2,400 Sq.M • UP</div>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-semibold text-indigo-600">Select →</span>
+                </div>
+
+                <div onclick="loadSampleDeedForScanning('sample_marathi_7_12')" class="sample-deed-chip w-full justify-between hover:border-indigo-400 cursor-pointer p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/40 transition">
+                  <div class="flex items-center gap-2.5 text-left">
+                    <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">7/12</span>
+                    <div>
+                      <div class="text-xs font-bold text-slate-800">Maharashtra 7/12 • Gat 142/A</div>
+                      <div class="text-[10px] text-slate-500">Balasaheb Tukaram Patil • 3,200 Sq.M • Pune</div>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-semibold text-indigo-600">Select →</span>
+                </div>
+
+                <div onclick="loadSampleDeedForScanning('sample_telugu_pahani')" class="sample-deed-chip w-full justify-between hover:border-indigo-400 cursor-pointer p-2.5 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/40 transition">
+                  <div class="flex items-center gap-2.5 text-left">
+                    <span class="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 font-bold text-xs flex items-center justify-center">88/2</span>
+                    <div>
+                      <div class="text-xs font-bold text-slate-800">Telangana Dharani • Survey 88/2</div>
+                      <div class="text-[10px] text-slate-500">Katam Venkat Rao • 4,500 Sq.M • Hyderabad</div>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-semibold text-indigo-600">Select →</span>
+                </div>
+
+                <div onclick="loadSampleDeedForScanning('sample_share_mismatch')" class="sample-deed-chip w-full justify-between hover:border-rose-400 cursor-pointer p-2.5 rounded-xl border border-rose-100 bg-rose-50/30 hover:bg-rose-50/60 transition">
+                  <div class="flex items-center gap-2.5 text-left">
+                    <span class="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center">108</span>
+                    <div>
+                      <div class="text-xs font-bold text-slate-800">Deed with Partition Error • Khasra 108</div>
+                      <div class="text-[10px] text-rose-600 font-medium">Harish & Rajat Chand • Share 120% Error</div>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-semibold text-rose-600">Select →</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 text-[11px] text-slate-400 flex items-center gap-1.5">
+              <i data-lucide="shield" class="w-3.5 h-3.5 text-emerald-500"></i>
+              <span>All uploads verified on blockchain ledger</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Scanned Records Interactive Table Section -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-bold text-slate-900 tracking-tight">Digitized Land Records Table</h3>
+                <span id="scanned-records-count-badge" class="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0 Records</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Records digitized from uploaded Deeds, 7/12 extracts and cadastral surveys</p>
+            </div>
+
+            <!-- Table Search / Filter -->
+            <div class="flex items-center gap-2">
+              <div class="relative">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5"></i>
+                <input type="text" id="scanner-table-search" oninput="filterScannedRecordsTable()" placeholder="Search Name, Deed ID, Khasra..." class="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 w-56 sm:w-64">
+              </div>
+              <button onclick="refreshScannedRecordsTable()" class="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition" title="Refresh Table">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="scanned-table-container">
+            <table class="scanned-table">
+              <thead>
+                <tr>
+                  <th>Registry Deed ID / Ref</th>
+                  <th>Owner / Party Name(s)</th>
+                  <th>Khasra / Plot</th>
+                  <th>Khata No</th>
+                  <th>Area (Sq.M)</th>
+                  <th>Type</th>
+                  <th>Jurisdiction</th>
+                  <th>Scan Accuracy</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="scanned-records-table-body">
+                <!-- Dynamically Rendered -->
+                <tr>
+                  <td colspan="9" class="text-center py-8 text-xs text-slate-400">
+                    <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+                    No documents scanned yet. Upload a deed or select a sample above.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>BHOOMI Cadastral AI • Optical & Spatial Neural Engine</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="closeRegistryScannerModal()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-100 transition">Close Window</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= AUTHENTICATION MODAL (SIGN IN / SIGN UP) ================= -->
   <div id="auth-modal-overlay" class="auth-modal-overlay hidden" onclick="if(event.target === this) closeAuthModal()">
     <div class="auth-modal-card">
@@ -1237,8 +1467,142 @@
         <span class="flex items-center gap-1 text-emerald-700 font-medium">
           <i data-lucide="lock" class="w-3 h-3"></i> 256-Bit PBKDF2 Encrypted
         </span>
-        <button onclick="closeAuthModal()" class="px-2.5 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700 hover:bg-slate-50 transition">Cancel</button>
+  <!-- ================= FLOATING CORNER SCAN ACCURACY & INTELLIGENCE HUD ================= -->
+  <div id="corner-scan-hud" class="corner-scan-hud hidden">
+    <!-- HUD Header -->
+    <div class="hud-header">
+      <div class="hud-title">
+        <span class="hud-beacon"></span>
+        <span id="hud-top-title">AI SCAN INTELLIGENCE</span>
       </div>
+      <div class="flex items-center gap-1">
+        <button onclick="toggleMinimizeCornerHUD()" class="hud-action-btn" id="btn-hud-minimize" title="Minimize / Expand">
+          <i data-lucide="minus" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="closeCornerHUD()" class="hud-action-btn" title="Close Box">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- HUD Body -->
+    <div class="hud-body">
+      <!-- Accuracy Gauge Card -->
+      <div class="hud-accuracy-card">
+        <div>
+          <div class="text-[10px] uppercase font-bold text-sky-400 tracking-wider">Overall Scan Accuracy</div>
+          <div id="hud-accuracy-percent" class="text-2xl font-extrabold text-white tracking-tight">96.8%</div>
+          <div id="hud-fidelity-status" class="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+            <i data-lucide="check-circle" class="w-3 h-3"></i> High-Fidelity Extraction
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 font-medium">Deed Reference</div>
+          <div id="hud-deed-id" class="text-xs font-mono font-bold text-sky-300">REG-2026-UP-44912</div>
+          <div id="hud-ocr-engine-tag" class="text-[9px] text-slate-400 mt-1 font-mono">OCR Confidence: 0.97</div>
+        </div>
+      </div>
+
+      <!-- Scanned Parties & Owner Details -->
+      <div class="hud-detail-pill">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="user-check" class="w-3 h-3 text-sky-400"></i>
+            Party / Owner Name(s)
+          </span>
+          <span id="hud-owner-accuracy" class="text-[10px] font-bold text-emerald-400">97.0% Acc</span>
+        </div>
+        <div id="hud-owner-names" class="text-xs font-semibold text-white">Anand Kumar Mishra</div>
+        <div id="hud-owner-meta" class="text-[10px] text-slate-400 mt-0.5">Share: 100.0% • Aadhaar: Masked & Verified</div>
+      </div>
+
+      <!-- Registry IDs & Cadastral Numbers -->
+      <div class="hud-detail-pill">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="hash" class="w-3 h-3 text-indigo-400"></i>
+            Document & Cadastral IDs
+          </span>
+          <span id="hud-id-accuracy" class="text-[10px] font-bold text-emerald-400">98.5% Acc</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span class="text-[10px] text-slate-400 block">Khasra / Survey:</span>
+            <span id="hud-khasra-no" class="font-bold text-sky-200">108/A</span>
+          </div>
+          <div>
+            <span class="text-[10px] text-slate-400 block">Khata Number:</span>
+            <span id="hud-khata-no" class="font-bold text-sky-200">52</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Land Details & Jurisdiction -->
+      <div class="hud-detail-pill">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="map-pin" class="w-3 h-3 text-amber-400"></i>
+            Land Details & Jurisdiction
+          </span>
+          <span id="hud-land-accuracy" class="text-[10px] font-bold text-emerald-400">96.0% Acc</span>
+        </div>
+        <div class="text-xs text-white">
+          <span id="hud-land-area" class="font-bold">2,500.00 Sq. Meters</span>
+          <span class="text-slate-400"> • </span>
+          <span id="hud-land-type" class="text-emerald-300 font-medium">Agricultural</span>
+        </div>
+        <div id="hud-location-jurisdiction" class="text-[10px] text-slate-400 mt-0.5">
+          Village Rampur, Tehsil Sadar, District Varanasi, Uttar Pradesh
+        </div>
+      </div>
+
+      <!-- Accuracy Breakdown Progress Meters -->
+      <div class="space-y-1.5 pt-1 border-t border-slate-800">
+        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Field-Level Verification</div>
+        
+        <div>
+          <div class="hud-metric-row">
+            <span>Parties & Names</span>
+            <span id="hud-meter-owner-val">97%</span>
+          </div>
+          <div class="hud-progress-track">
+            <div id="hud-meter-owner-fill" class="hud-progress-fill bg-sky-400" style="width: 97%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="hud-metric-row">
+            <span>Deed & Khasra IDs</span>
+            <span id="hud-meter-id-val">98%</span>
+          </div>
+          <div class="hud-progress-track">
+            <div id="hud-meter-id-fill" class="hud-progress-fill bg-indigo-400" style="width: 98%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="hud-metric-row">
+            <span>Land Area & Classification</span>
+            <span id="hud-meter-area-val">96%</span>
+          </div>
+          <div class="hud-progress-track">
+            <div id="hud-meter-area-fill" class="hud-progress-fill bg-emerald-400" style="width: 96%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Footer inside HUD -->
+      <div class="flex items-center gap-2 pt-2 border-t border-slate-800">
+        <button onclick="openRegistryScannerModal()" class="flex-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="table" class="w-3.5 h-3.5"></i>
+          <span>View Table</span>
+        </button>
+        <button id="btn-hud-locate-map" onclick="locateScannedDeedOnMap()" class="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition border border-slate-700">
+          <i data-lucide="map" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>Locate Map</span>
+        </button>
+      </div>
+
     </div>
   </div>
 
