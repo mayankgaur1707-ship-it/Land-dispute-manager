@@ -2612,6 +2612,8 @@ function updateAuthUI() {
   const containers = document.querySelectorAll('#nav-auth-container');
   if (!containers || containers.length === 0) return;
 
+  const isLightNav = !!document.querySelector('header.bg-white') || !!document.querySelector('.landing-nav');
+
   containers.forEach(container => {
     if (user) {
       // User is logged in
@@ -2623,44 +2625,61 @@ function updateAuthUI() {
       };
       const shortRole = roleLabels[user.role] || user.role;
       
+      const badgeClass = isLightNav
+        ? 'bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800'
+        : 'bg-white/10 hover:bg-white/15 border border-white/15 text-slate-100';
+      const nameClass = isLightNav ? 'text-slate-900 font-bold' : 'text-slate-100 font-bold';
+      const chevronClass = isLightNav ? 'text-slate-500' : 'text-slate-400';
+
       container.innerHTML = `
-        <div class="relative group">
-          <div class="user-profile-badge">
-            <div class="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs">
-              ${(user.full_name || 'U').charAt(0).toUpperCase()}
+        <div class="flex items-center gap-2">
+          <div class="relative group">
+            <div class="user-profile-badge ${badgeClass}">
+              <div class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+                ${(user.full_name || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div class="text-left hidden sm:block">
+                <div class="leading-tight text-xs max-w-[130px] truncate ${nameClass}">${escapeHtml(user.full_name)}</div>
+                <div class="leading-none text-[10px] text-emerald-600 font-medium">${shortRole}</div>
+              </div>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5 ${chevronClass}"></i>
             </div>
-            <div class="text-left hidden sm:block">
-              <div class="leading-tight text-xs text-slate-100 font-bold max-w-[130px] truncate">${escapeHtml(user.full_name)}</div>
-              <div class="leading-none text-[10px] text-emerald-400 font-medium">${shortRole}</div>
+            <!-- Dropdown menu -->
+            <div class="absolute right-0 mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 hidden group-hover:block z-50 animate-in fade-in slide-in-from-top-2">
+              <div class="px-3 py-2 border-b border-slate-100">
+                <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(user.full_name)}</p>
+                <p class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(user.email)}</p>
+                <span class="inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">${user.role}</span>
+              </div>
+              <div class="p-1 space-y-0.5">
+                <a href="/app" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-lg transition flex items-center gap-2">
+                  <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-emerald-600"></i>
+                  <span>Enter Console Dashboard</span>
+                </a>
+                <button onclick="handleSignOut()" class="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition flex items-center gap-2">
+                  <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                  <span>Sign Out</span>
+                </button>
+              </div>
             </div>
-            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
           </div>
-          <!-- Dropdown menu -->
-          <div class="absolute right-0 mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 hidden group-hover:block z-50 animate-in fade-in slide-in-from-top-2">
-            <div class="px-3 py-2 border-b border-slate-100">
-              <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(user.full_name)}</p>
-              <p class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(user.email)}</p>
-              <span class="inline-block mt-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">${user.role}</span>
-            </div>
-            <div class="p-1">
-              <button onclick="handleSignOut()" class="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition flex items-center gap-2">
-                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-                <span>Sign Out</span>
-              </button>
-            </div>
-          </div>
+          <a href="/app" class="text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg transition flex items-center gap-1.5 shadow-xs" title="Open Main Dashboard">
+            <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span class="hidden sm:inline">Dashboard</span>
+            <i data-lucide="arrow-right" class="w-3 h-3 text-slate-400"></i>
+          </a>
         </div>
       `;
     } else {
       // Guest state
       container.innerHTML = `
-        <button onclick="openAuthModal('signin')" class="text-xs font-semibold text-slate-700 hover:text-slate-950 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1.5 border border-slate-200 shadow-xs bg-white">
+        <button onclick="openAuthModal('signin')" class="text-xs font-semibold text-slate-700 hover:text-slate-950 px-3.5 py-2 rounded-lg hover:bg-slate-100 transition flex items-center gap-1.5 border border-slate-200 shadow-xs bg-white">
           <i data-lucide="log-in" class="w-3.5 h-3.5 text-slate-500"></i>
           <span>Sign In</span>
         </button>
-        <button onclick="openAuthModal('signup')" class="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs">
+        <button onclick="openAuthModal('signup')" class="text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-xs">
           <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Sign Up</span>
+          <span>Sign Up</span>
         </button>
       `;
     }
@@ -2670,6 +2689,17 @@ function updateAuthUI() {
     lucide.createIcons();
   }
 }
+
+function navigateToDashboard(hash = '') {
+  const user = getAuthUser();
+  if (user) {
+    window.location.href = '/app' + (hash ? '#' + hash : '');
+  } else {
+    openAuthModal('signin');
+    showAuthAlert('Please sign in or register to access the operational dashboard.', 'error');
+  }
+}
+window.navigateToDashboard = navigateToDashboard;
 
 function openAuthModal(tab = 'signin') {
   const overlay = document.getElementById('auth-modal-overlay');
@@ -2809,14 +2839,12 @@ async function handleSignInSubmit(event) {
 
     // Success
     setAuthSession(data.access_token, data.user);
-    showAuthAlert(`Welcome back, ${data.user.full_name}!`, 'success');
+    showAuthAlert(`Welcome back, ${data.user.full_name}! Redirecting to dashboard...`, 'success');
     
     setTimeout(() => {
       closeAuthModal();
-      if (typeof showNotification === 'function') {
-        showNotification(`Signed in as ${data.user.full_name} (${data.user.role})`);
-      }
-    }, 600);
+      window.location.href = '/app';
+    }, 500);
   } catch (err) {
     showAuthAlert('Network error while connecting to authentication service.');
   } finally {
@@ -2888,14 +2916,12 @@ async function handleSignUpSubmit(event) {
 
     // Success
     setAuthSession(data.access_token, data.user);
-    showAuthAlert('Account created successfully! Logging you in...', 'success');
+    showAuthAlert('Account created successfully! Redirecting to dashboard...', 'success');
 
     setTimeout(() => {
       closeAuthModal();
-      if (typeof showNotification === 'function') {
-        showNotification(`Welcome to BHOOMI, ${data.user.full_name}!`);
-      }
-    }, 700);
+      window.location.href = '/app';
+    }, 500);
   } catch (err) {
     showAuthAlert('Network error while registering account.');
   } finally {

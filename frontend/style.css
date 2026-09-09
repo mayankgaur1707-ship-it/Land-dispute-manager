@@ -839,6 +839,24 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* Light Navbar support for User Profile Badge */
+header.bg-white .user-profile-badge,
+.landing-nav .user-profile-badge {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+header.bg-white .user-profile-badge:hover,
+.landing-nav .user-profile-badge:hover {
+  background: #e2e8f0;
+}
+
+header.bg-white .user-profile-badge .user-name-text,
+.landing-nav .user-profile-badge .user-name-text {
+  color: #0f172a !important;
+}
+
 .auth-header-btn {
   display: inline-flex;
   align-items: center;
