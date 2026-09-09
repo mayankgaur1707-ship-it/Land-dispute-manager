@@ -16,16 +16,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function initApp() {
   setupRoleSelector();
-  await loadTemplates();
-  await loadAnalytics();
-  await loadRecords();
-  await loadPendingVerifications();
-  await loadDisputes();
-  await loadLedger();
+  
+  // Initialize AI Chatbot immediately so it is available right away on all pages
+  await initChat();
+
+  try {
+    await loadTemplates();
+    await loadAnalytics();
+    await loadRecords();
+    await loadPendingVerifications();
+    await loadDisputes();
+    await loadLedger();
+  } catch (err) {
+    console.warn('Page-specific data load notice:', err);
+  }
   
   // Hash deep-linking
   const hash = window.location.hash.replace('#', '');
-  if (hash && ['dashboard', 'digitize', 'verify', 'disputes', 'map', 'ledger', 'citizen'].includes(hash)) {
+  if (hash && ['dashboard', 'digitize', 'verify', 'disputes', 'map', 'ledger', 'citizen', 'assistant'].includes(hash)) {
     switchTab(hash);
   }
 
@@ -79,6 +87,8 @@ function handleRoleChange(role) {
   // Re-render records & disputes to apply role permissions
   renderRecordsTable(recordsCache);
   renderDisputes(disputesCache);
+  updateChatRoleDisplay();
+  loadChatSuggestions();
   lucide.createIcons();
 }
 
@@ -99,6 +109,9 @@ function switchTab(tabId) {
     }, 150);
   } else if (tabId === 'verify') {
     loadPendingVerifications();
+  } else if (tabId === 'assistant') {
+    const input = document.getElementById('dedicated-chat-input');
+    if (input) setTimeout(() => input.focus(), 150);
   }
 
   if (window.history && window.history.replaceState) {
@@ -116,23 +129,25 @@ async function loadAnalytics() {
     const res = await fetch('/api/analytics');
     const data = await res.json();
 
-    document.getElementById('stat-total-records').innerText = data.total_records || 0;
-    document.getElementById('stat-total-hectares').innerText = data.total_area_hectares || 0;
-    document.getElementById('stat-active-disputes').innerText = data.active_disputes || 0;
-    document.getElementById('badge-disputes-count').innerText = data.active_disputes || 0;
-    document.getElementById('stat-clear-records').innerText = data.clear_records || 0;
+    const setElemText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.innerText = val;
+    };
+
+    setElemText('stat-total-records', data.total_records || 0);
+    setElemText('stat-total-hectares', data.total_area_hectares || 0);
+    setElemText('stat-active-disputes', data.active_disputes || 0);
+    setElemText('badge-disputes-count', data.active_disputes || 0);
+    setElemText('stat-clear-records', data.clear_records || 0);
 
     const clearPct = data.total_records > 0 ? Math.round((data.clear_records / data.total_records) * 100) : 100;
-    document.getElementById('stat-clear-pct').innerText = `${clearPct}%`;
-    document.getElementById('stat-avg-confidence').innerText = `${data.avg_confidence_score}%`;
+    setElemText('stat-clear-pct', `${clearPct}%`);
+    setElemText('stat-avg-confidence', `${data.avg_confidence_score}%`);
 
     const pendingCount = data.pending_verifications || 0;
-    const statPending = document.getElementById('stat-pending-verifications');
-    if (statPending) statPending.innerText = pendingCount;
-    const badgePending = document.getElementById('badge-pending-count');
-    if (badgePending) badgePending.innerText = pendingCount;
-    const verifyQueueCount = document.getElementById('verify-queue-count');
-    if (verifyQueueCount) verifyQueueCount.innerText = `${pendingCount} Case${pendingCount === 1 ? '' : 's'} Pending`;
+    setElemText('stat-pending-verifications', pendingCount);
+    setElemText('badge-pending-count', pendingCount);
+    setElemText('verify-queue-count', `${pendingCount} Case${pendingCount === 1 ? '' : 's'} Pending`);
 
     renderStateProgress(data.state_breakdown || {});
   } catch (err) {
@@ -1586,3 +1601,915 @@ function downloadBankLienReport(recordId) {
     certificateWindow.print();
   }, 300);
 }
+
+// -------------------------------------------------------------------------
+// 8. BHOOMI AI SAHAYAK (INTELLIGENT LAND CHATBOX & PROBLEM SOLVER)
+// -------------------------------------------------------------------------
+
+let chatConversationHistory = [];
+let isSpeechAudioActive = localStorage.getItem('bhoomi_speech_enabled') !== 'false';
+let activeSpeechUtterance = null;
+let activeSpeakingButton = null;
+
+let faqCategoriesCache = [];
+let popularFaqsCache = [];
+let selectedFaqCategory = null;
+let faqSearchDebounceTimer = null;
+
+async function initChat() {
+  updateChatRoleDisplay();
+  await initFaqKnowledgeBase();
+
+  // Initialize Welcome Message in Floating Chat
+  const floatingMsgContainer = document.getElementById('floating-chat-messages');
+  if (floatingMsgContainer && floatingMsgContainer.children.length === 0) {
+    appendChatBubble('assistant', getInitialWelcomeText(), [
+      { type: "NAVIGATE_TAB", tab: "map", label: "🗺️ Cadastral Map" },
+      { type: "NAVIGATE_TAB", tab: "disputes", label: "⚖️ Active Disputes" },
+      { type: "NAVIGATE_TAB", tab: "digitize", label: "📄 Digitize Deed" }
+    ], 'floating-chat-messages');
+  }
+
+  // Initialize Welcome Message in Dedicated Tab Chat
+  const dedicatedMsgContainer = document.getElementById('dedicated-chat-messages');
+  if (dedicatedMsgContainer && dedicatedMsgContainer.children.length === 0) {
+    appendChatBubble('assistant', getInitialWelcomeText(), [
+      { type: "NAVIGATE_TAB", tab: "map", label: "🗺️ Open Cadastral Map" },
+      { type: "NAVIGATE_TAB", tab: "disputes", label: "⚖️ Inspect Disputes Engine" },
+      { type: "NAVIGATE_TAB", tab: "digitize", label: "📄 AI-OCR Digitizer" }
+    ], 'dedicated-chat-messages');
+  }
+
+  // Sync audio icon state
+  const audioIcon = document.getElementById('audio-toggle-icon');
+  if (audioIcon) {
+    if (isSpeechAudioActive) {
+      audioIcon.classList.add('text-emerald-400');
+      audioIcon.classList.remove('text-slate-400');
+    } else {
+      audioIcon.classList.remove('text-emerald-400');
+      audioIcon.classList.add('text-slate-400');
+    }
+  }
+
+  lucide.createIcons();
+}
+
+async function initFaqKnowledgeBase() {
+  try {
+    // 1. Fetch categories
+    const catRes = await fetch('/api/faq/categories');
+    const catData = await catRes.json();
+    faqCategoriesCache = catData.categories || [];
+    renderCategoryPills();
+    populateFaqModalFilters();
+
+    // 2. Fetch popular questions
+    const popRes = await fetch('/api/faq/popular');
+    const popData = await popRes.json();
+    popularFaqsCache = popData.popular_faqs || [];
+    renderFaqChips(popularFaqsCache);
+  } catch (err) {
+    console.error('Failed to init FAQ knowledge base:', err);
+    await loadChatSuggestions();
+  }
+}
+
+function renderCategoryPills() {
+  const container = document.getElementById('floating-category-pills');
+  if (!container) return;
+
+  const allActive = !selectedFaqCategory ? 'active' : '';
+  let html = `
+    <button type="button" onclick="selectFaqCategory(null)" class="faq-category-pill ${allActive}">
+      <span>All Topics</span>
+      <span class="pill-count">184</span>
+    </button>
+  `;
+
+  faqCategoriesCache.forEach(cat => {
+    const isActive = selectedFaqCategory === cat.id ? 'active' : '';
+    html += `
+      <button type="button" onclick="selectFaqCategory('${cat.id}')" class="faq-category-pill ${isActive}" title="${cat.name}">
+        <span>${cat.name}</span>
+        <span class="pill-count">${cat.count}</span>
+      </button>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+async function selectFaqCategory(categoryId) {
+  if (selectedFaqCategory === categoryId) {
+    selectedFaqCategory = null;
+  } else {
+    selectedFaqCategory = categoryId;
+  }
+  renderCategoryPills();
+
+  if (selectedFaqCategory) {
+    try {
+      const res = await fetch(`/api/faq/search?category_id=${selectedFaqCategory}&limit=12`);
+      const data = await res.json();
+      renderFaqChips(data.results || []);
+    } catch (err) {
+      console.error('Failed to load category questions:', err);
+    }
+  } else {
+    renderFaqChips(popularFaqsCache);
+  }
+}
+
+function renderFaqChips(items) {
+  const floatingChipsEl = document.getElementById('floating-chat-chips');
+  const dedicatedChipsEl = document.getElementById('dedicated-chat-chips');
+  if (!items || items.length === 0) return;
+
+  const chipsHtml = items.map(item => {
+    const qText = typeof item === 'string' ? item : (item.question || item.label || item.query);
+    const catId = typeof item === 'object' ? item.category_id : null;
+    const escapedQ = escapeHtmlAttribute(qText);
+    const catParam = catId ? `'${catId}'` : 'null';
+    return `
+      <button type="button" onclick="askPresetQuery('${escapedQ}', ${catParam})" class="chat-chip" title="${escapeHtml(qText)}">
+        ${escapeHtml(qText)}
+      </button>
+    `;
+  }).join('');
+
+  if (floatingChipsEl) floatingChipsEl.innerHTML = chipsHtml;
+  if (dedicatedChipsEl) dedicatedChipsEl.innerHTML = chipsHtml;
+}
+
+function openFaqLibraryModal(categoryId = null) {
+  const modal = document.getElementById('faq-library-modal');
+  if (!modal) return;
+
+  modal.classList.remove('hidden');
+
+  if (categoryId) {
+    const filterSelect = document.getElementById('faq-modal-category-filter');
+    if (filterSelect) filterSelect.value = categoryId;
+  }
+
+  loadModalFaqs();
+  lucide.createIcons();
+}
+
+function closeFaqLibraryModal() {
+  const modal = document.getElementById('faq-library-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function handleFaqModalOverlayClick(event) {
+  if (event.target.id === 'faq-library-modal') {
+    closeFaqLibraryModal();
+  }
+}
+
+function handleFaqSearchInput() {
+  clearTimeout(faqSearchDebounceTimer);
+  faqSearchDebounceTimer = setTimeout(() => {
+    loadModalFaqs();
+  }, 200);
+}
+
+function handleFaqFilterChange() {
+  loadModalFaqs();
+}
+
+function populateFaqModalFilters() {
+  const select = document.getElementById('faq-modal-category-filter');
+  if (!select || select.options.length > 1) return;
+
+  faqCategoriesCache.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = `${cat.name} (${cat.count})`;
+    select.appendChild(opt);
+  });
+}
+
+async function loadModalFaqs() {
+  const qInput = document.getElementById('faq-modal-search-input');
+  const catSelect = document.getElementById('faq-modal-category-filter');
+  const stateSelect = document.getElementById('faq-modal-state-filter');
+  const container = document.getElementById('faq-modal-items-container');
+  const countEl = document.getElementById('faq-modal-count-indicator');
+
+  const q = qInput ? qInput.value.trim() : '';
+  const categoryId = catSelect ? catSelect.value : '';
+  const state = stateSelect ? stateSelect.value : '';
+
+  if (container) {
+    container.innerHTML = `
+      <div class="py-12 text-center text-slate-400">
+        <div class="inline-block w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+        <p class="text-xs">Searching Land Records FAQ Library...</p>
+      </div>
+    `;
+  }
+
+  try {
+    let url = `/api/faq/search?limit=100`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+    if (categoryId) url += `&category_id=${encodeURIComponent(categoryId)}`;
+    if (state) url += `&state=${encodeURIComponent(state)}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (countEl) {
+      countEl.innerText = `Showing ${results.length} FAQs`;
+    }
+
+    renderFaqModalList(results);
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `<p class="text-rose-500 text-xs py-4 text-center">Failed to load FAQs: ${err.message}</p>`;
+    }
+  }
+}
+
+function renderFaqModalList(faqs) {
+  const container = document.getElementById('faq-modal-items-container');
+  if (!container) return;
+
+  if (faqs.length === 0) {
+    container.innerHTML = `
+      <div class="py-12 text-center text-slate-400">
+        <i data-lucide="help-circle" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+        <p class="text-sm font-semibold text-slate-600">No matching questions found</p>
+        <p class="text-xs text-slate-400 mt-1">Try another keyword or change the category filter.</p>
+      </div>
+    `;
+    lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = faqs.map(faq => {
+    const qEn = escapeHtml(faq.question);
+    const qHi = faq.question_hi ? escapeHtml(faq.question_hi) : '';
+    const ansHtml = escapeHtml(faq.answer).replace(/\\n/g, '<br/>');
+    const stateNoteHtml = faq.state_notes ? `
+      <div class="mt-2 text-[11px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+        📍 <strong>State Rules:</strong> ${escapeHtml(faq.state_notes)}
+      </div>
+    ` : '';
+    const escapedQuestion = escapeHtmlAttribute(faq.question);
+    const catId = escapeHtmlAttribute(faq.category_id);
+
+    return `
+      <div class="faq-item-card" id="faq-card-${faq.id}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="faq-badge faq-badge-emerald">${escapeHtml(faq.category)}</span>
+              <span class="text-[10px] text-slate-400 font-mono">#${faq.id}</span>
+            </div>
+            <h4 class="text-xs sm:text-sm font-bold text-slate-800 hover:text-emerald-700 transition cursor-pointer" onclick="toggleFaqAccordion('${faq.id}')">
+              ${qEn}
+            </h4>
+            ${qHi ? `<p class="text-[11px] text-slate-500 mt-0.5 cursor-pointer" onclick="toggleFaqAccordion('${faq.id}')">${qHi}</p>` : ''}
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button type="button" onclick="askFaqDirectly('${escapedQuestion}', '${catId}')" class="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition flex items-center gap-1">
+              <i data-lucide="message-square" class="w-3 h-3"></i> Ask AI
+            </button>
+            <button type="button" onclick="toggleFaqAccordion('${faq.id}')" id="faq-toggle-btn-${faq.id}" class="p-1 text-slate-400 hover:text-slate-600 rounded transition">
+              <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Answer Details -->
+        <div id="faq-answer-${faq.id}" class="hidden mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">
+          <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-2 font-normal">
+            ${ansHtml}
+          </div>
+          ${stateNoteHtml}
+          <div class="mt-2.5 flex items-center justify-between text-[11px]">
+            <span class="text-slate-400">Category: ${escapeHtml(faq.category)}</span>
+            <button type="button" onclick="copyFaqText('${escapedQuestion}', this)" class="text-emerald-600 hover:underline flex items-center gap-1">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy Question
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function toggleFaqAccordion(faqId) {
+  const ansEl = document.getElementById(`faq-answer-${faqId}`);
+  const btnEl = document.getElementById(`faq-toggle-btn-${faqId}`);
+  if (!ansEl) return;
+
+  const isHidden = ansEl.classList.contains('hidden');
+  if (isHidden) {
+    ansEl.classList.remove('hidden');
+    if (btnEl) btnEl.innerHTML = '<i data-lucide="chevron-up" class="w-4 h-4 text-emerald-600"></i>';
+  } else {
+    ansEl.classList.add('hidden');
+    if (btnEl) btnEl.innerHTML = '<i data-lucide="chevron-down" class="w-4 h-4"></i>';
+  }
+  lucide.createIcons();
+}
+
+function askFaqDirectly(question, categoryId) {
+  closeFaqLibraryModal();
+  const floatingWindow = document.getElementById('floating-chat-window');
+  if (floatingWindow && floatingWindow.classList.contains('minimized')) {
+    toggleFloatingChat();
+  }
+  sendChatMessage(question, 'floating', { category_id: categoryId });
+}
+
+function copyFaqText(text, btnEl) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btnEl.innerHTML;
+    btnEl.innerHTML = '<i data-lucide="check" class="w-3 h-3 text-emerald-600"></i> Copied!';
+    lucide.createIcons();
+    setTimeout(() => {
+      btnEl.innerHTML = orig;
+      lucide.createIcons();
+    }, 2000);
+  });
+}
+
+function getInitialWelcomeText() {
+  const roleNameMap = {
+    'REVENUE_OFFICER': 'Revenue Officer / Patwari',
+    'CITIZEN_LANDOWNER': 'Citizen / Landowner',
+    'CITIZEN_FARMER': 'Citizen / Landowner',
+    'BANK_OFFICER': 'Bank / Lending Officer',
+    'DILRMP_ADMIN': 'DILRMP State Administrator'
+  };
+  const roleLabel = roleNameMap[currentRole] || 'Revenue Officer';
+
+  return `### 🙏 Welcome to Bhoomi AI Sahayak (भूमि AI सहायक)
+I am your official real-time AI consultant for the **Intelligent Land Record Digitization & Dispute Resolution System** (Govt of India - Ministry of Rural Development).
+
+**Logged-in Role**: **${roleLabel}**
+
+**How I can assist you:**
+- 🔍 **Inspect Land Parcels**: Enter any Khasra # (e.g., **101**, **102**, **105**) to check owner shares, dispute flags, and boundary coordinates.
+- 📚 **180+ Land Records Knowledge Base**: Instant answers across 14 categories (Khasra, Khatauni, Jamabandi, 7/12, Mutation, Inheritance, Measurement, RTI, etc.).
+- ⚖️ **Boundary Dispute Resolution**: Complete statutory step-by-step guidance on **Section 24 Demarcation (सीमांकन/हदबंदी)** and Electronic Total Station (ETS) field surveys.
+- 📝 **Mutation (दाखिल-खारिज)**: Document checklists, citizen charter deadlines (35/90 days), and Khatauni update rules.
+- 🏦 **Bank Mortgage Title Search**: 13-point due diligence, Nil-Encumbrance Form 15/16 vetting, and credit eligibility.
+- 🛡️ **Blockchain Audit**: SHA-256 tamper-proof ledger validation.
+
+*You can ask in English, हिंदी, or Hinglish!*`;
+}
+
+function updateChatRoleDisplay() {
+  const roleNameMap = {
+    'REVENUE_OFFICER': 'Revenue Officer / Patwari',
+    'CITIZEN_LANDOWNER': 'Citizen / Landowner',
+    'CITIZEN_FARMER': 'Citizen / Landowner',
+    'BANK_OFFICER': 'Bank / Lending Officer',
+    'DILRMP_ADMIN': 'DILRMP State Administrator'
+  };
+  const roleLabel = roleNameMap[currentRole] || 'Revenue Officer';
+
+  const floatingRoleEl = document.getElementById('floating-role-display');
+  if (floatingRoleEl) {
+    floatingRoleEl.innerText = `Role: ${roleLabel}`;
+  }
+
+  const dedicatedRoleEl = document.getElementById('assistant-tab-role-tag');
+  if (dedicatedRoleEl) {
+    dedicatedRoleEl.innerText = `Active Role: ${roleLabel}`;
+  }
+}
+
+async function loadChatSuggestions() {
+  try {
+    const res = await fetch(`/api/chat/suggestions?role=${currentRole}`);
+    const data = await res.json();
+    const suggestions = data.suggestions || [];
+    renderFaqChips(suggestions);
+  } catch (err) {
+    console.error('Failed to load chat suggestions:', err);
+  }
+}
+
+function escapeHtmlAttribute(str) {
+  return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function toggleFloatingChat() {
+  const chatWindow = document.getElementById('floating-chat-window');
+  if (!chatWindow) return;
+
+  const isMin = chatWindow.classList.contains('minimized');
+  if (isMin) {
+    chatWindow.classList.remove('minimized');
+    setTimeout(() => {
+      const input = document.getElementById('floating-chat-input');
+      if (input) input.focus();
+    }, 150);
+  } else {
+    chatWindow.classList.add('minimized');
+  }
+  lucide.createIcons();
+}
+
+function toggleChatFullscreen() {
+  const chatWindow = document.getElementById('floating-chat-window');
+  const icon = document.getElementById('fullscreen-toggle-icon');
+  if (!chatWindow) return;
+
+  const isFull = chatWindow.classList.contains('fullscreen');
+  if (isFull) {
+    chatWindow.classList.remove('fullscreen');
+    if (icon) icon.setAttribute('data-lucide', 'maximize-2');
+  } else {
+    chatWindow.classList.add('fullscreen');
+    if (icon) icon.setAttribute('data-lucide', 'minimize-2');
+  }
+  lucide.createIcons();
+}
+
+function toggleAudioSpeech() {
+  isSpeechAudioActive = !isSpeechAudioActive;
+  localStorage.setItem('bhoomi_speech_enabled', isSpeechAudioActive);
+
+  if (!isSpeechAudioActive && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+    if (activeSpeakingButton) {
+      activeSpeakingButton.classList.remove('speaking');
+      activeSpeakingButton = null;
+    }
+  }
+
+  const icon = document.getElementById('audio-toggle-icon');
+  if (icon) {
+    if (isSpeechAudioActive) {
+      icon.classList.add('text-emerald-400');
+      icon.classList.remove('text-slate-400');
+    } else {
+      icon.classList.remove('text-emerald-400');
+      icon.classList.add('text-slate-400');
+    }
+  }
+}
+
+function handleChatKeyDown(event, source) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    if (source === 'floating') {
+      const form = document.getElementById('floating-chat-form');
+      if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+  }
+}
+
+function handleFloatingChatSubmit(event) {
+  event.preventDefault();
+  const input = document.getElementById('floating-chat-input');
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  sendChatMessage(message, 'floating');
+}
+
+function handleDedicatedChatSubmit(event) {
+  event.preventDefault();
+  const input = document.getElementById('dedicated-chat-input');
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  sendChatMessage(message, 'dedicated');
+}
+
+function askPresetQuery(query, categoryId = null) {
+  // If on landing page and floating chat is minimized, open it
+  const floatingWindow = document.getElementById('floating-chat-window');
+  if (floatingWindow && floatingWindow.classList.contains('minimized')) {
+    toggleFloatingChat();
+  }
+
+  const opts = categoryId ? { category_id: categoryId } : {};
+  // If on index.html and user clicked from left panel in dedicated assistant view
+  if (currentTab === 'assistant') {
+    sendChatMessage(query, 'dedicated', opts);
+  } else {
+    sendChatMessage(query, 'floating', opts);
+  }
+}
+
+async function sendChatMessage(message, source = 'floating', options = {}) {
+  // 1. Append user message to both containers
+  appendChatBubble('user', message, [], 'floating-chat-messages');
+  appendChatBubble('user', message, [], 'dedicated-chat-messages');
+
+  // 2. Append typing indicator
+  const floatingTypingId = appendTypingIndicator('floating-chat-messages');
+  const dedicatedTypingId = appendTypingIndicator('dedicated-chat-messages');
+
+  // Disable send buttons temporarily
+  const floatingSendBtn = document.getElementById('floating-send-btn');
+  const dedicatedSendBtn = document.getElementById('dedicated-send-btn');
+  if (floatingSendBtn) floatingSendBtn.disabled = true;
+  if (dedicatedSendBtn) dedicatedSendBtn.disabled = true;
+
+  try {
+    const payload = {
+      message: message,
+      user_role: currentRole,
+      conversation_history: chatConversationHistory.slice(-6),
+      category_id: (options && options.category_id) || selectedFaqCategory,
+      state: (options && options.state) || null
+    };
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    const replyText = data.reply || "I have analyzed your query against the live land records database.";
+    const actions = data.suggested_actions || [];
+
+    // Remove typing indicators
+    removeTypingIndicator(floatingTypingId);
+    removeTypingIndicator(dedicatedTypingId);
+
+    // Append AI response bubbles
+    appendChatBubble('assistant', replyText, actions, 'floating-chat-messages');
+    appendChatBubble('assistant', replyText, actions, 'dedicated-chat-messages');
+
+    // Save to conversation history
+    chatConversationHistory.push({ role: 'user', content: message });
+    chatConversationHistory.push({ role: 'assistant', content: replyText });
+
+    // Render follow-up / related questions chips
+    if (data.suggested_questions && data.suggested_questions.length > 0) {
+      renderFaqChips(data.suggested_questions.map(q => ({ question: q, category_id: selectedFaqCategory })));
+    }
+
+    // Optional Auto-speech
+    if (isSpeechAudioActive) {
+      speakText(replyText, null);
+    }
+  } catch (err) {
+    removeTypingIndicator(floatingTypingId);
+    removeTypingIndicator(dedicatedTypingId);
+
+    const errorMsg = "⚠️ I encountered a temporary network communication error. Please verify your connection or try again.";
+    appendChatBubble('assistant', errorMsg, [], 'floating-chat-messages');
+    appendChatBubble('assistant', errorMsg, [], 'dedicated-chat-messages');
+  } finally {
+    if (floatingSendBtn) floatingSendBtn.disabled = false;
+    if (dedicatedSendBtn) dedicatedSendBtn.disabled = false;
+  }
+}
+
+function appendChatBubble(role, text, actions, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = `chat-message ${role}`;
+
+  const isAssistant = role === 'assistant';
+  const parsedHtml = isAssistant ? renderChatMarkdown(text) : escapeHtml(text);
+
+  let actionsHtml = '';
+  if (isAssistant && actions && actions.length > 0) {
+    const buttons = actions.map(act => {
+      const actJson = escapeHtmlAttribute(JSON.stringify(act));
+      return `<button type="button" onclick="handleActionClick('${actJson}')" class="chat-action-btn">${act.label}</button>`;
+    }).join('');
+    actionsHtml = `<div class="chat-action-container">${buttons}</div>`;
+  }
+
+  let metaBarHtml = '';
+  if (isAssistant) {
+    metaBarHtml = `
+      <div class="chat-bubble-meta">
+        <span class="flex items-center gap-1"><i data-lucide="shield-check" class="w-3 h-3 text-emerald-600"></i> DILRMP Grounded</span>
+        <div class="flex items-center gap-1.5">
+          <button type="button" onclick="speakTextFromBubble(this)" class="chat-meta-btn" title="Read aloud (Text-to-Speech)">
+            <i data-lucide="volume-2" class="w-3 h-3"></i> Listen
+          </button>
+          <button type="button" onclick="copyChatBubbleText(this)" class="chat-meta-btn" title="Copy response to clipboard">
+            <i data-lucide="copy" class="w-3 h-3"></i> Copy
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  msgDiv.innerHTML = `
+    <div class="chat-bubble">
+      ${parsedHtml}
+      ${actionsHtml}
+      ${metaBarHtml}
+    </div>
+  `;
+
+  container.appendChild(msgDiv);
+  container.scrollTop = container.scrollHeight;
+  lucide.createIcons();
+}
+
+function appendTypingIndicator(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return null;
+
+  const id = 'typing-' + Math.random().toString(36).substring(2, 9);
+  const div = document.createElement('div');
+  div.id = id;
+  div.className = 'chat-message assistant';
+  div.innerHTML = `
+    <div class="chat-bubble flex items-center gap-2 text-slate-500 text-xs">
+      <span class="font-medium">Analyzing records & legal codes</span>
+      <div class="typing-dots">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+    </div>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return id;
+}
+
+function removeTypingIndicator(id) {
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function renderChatMarkdown(rawText) {
+  if (!rawText) return '';
+  let html = rawText;
+
+  // Escape HTML entities to prevent injection
+  html = html
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Headings
+  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
+
+  // Bold & Italic
+  html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+  html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
+
+  // Inline Code
+  html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
+
+  // Bullet Lists (- item)
+  html = html.replace(/^\- (.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+  // Clean adjacent <ul> tags
+  html = html.replace(/<\/ul>\s*<ul>/gim, '');
+
+  // Line breaks & paragraphs
+  html = html.replace(/\n\n/gim, '<br/><br/>');
+  html = html.replace(/\n/gim, '<br/>');
+
+  return html;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function handleActionClick(actionJsonStr) {
+  try {
+    const act = JSON.parse(actionJsonStr);
+    const type = act.type;
+    const tab = act.tab;
+
+    if (type === 'NAVIGATE_TAB') {
+      // If currently on landing page, navigate to /app#tab
+      if (window.location.pathname === '/' || window.location.pathname.endsWith('landing.html')) {
+        window.location.href = `/app#${tab}`;
+        return;
+      }
+      switchTab(tab);
+
+      // If viewing parcel on map
+      if (tab === 'map' && act.payload && act.payload.khasra_no) {
+        setTimeout(() => {
+          highlightParcelOnMap(act.payload.khasra_no);
+        }, 300);
+      }
+    } else if (type === 'SEARCH_RECORD') {
+      const q = act.query;
+      if (window.location.pathname === '/' || window.location.pathname.endsWith('landing.html')) {
+        window.location.href = `/app#citizen`;
+        return;
+      }
+      switchTab('citizen');
+      const citizenInput = document.getElementById('citizen-search-input');
+      if (citizenInput) {
+        citizenInput.value = q;
+        handleCitizenSearch();
+      }
+    } else if (type === 'RESOLVE_DISPUTE') {
+      if (window.location.pathname === '/' || window.location.pathname.endsWith('landing.html')) {
+        window.location.href = `/app#disputes`;
+        return;
+      }
+      switchTab('disputes');
+      openDisputeModal(act.dispute_id);
+    }
+  } catch (err) {
+    console.error('Failed to execute chat action:', err);
+  }
+}
+
+function highlightParcelOnMap(khasraNo) {
+  if (!geojsonLayer || !gisMap) return;
+  geojsonLayer.eachLayer(layer => {
+    if (layer.feature && layer.feature.properties && layer.feature.properties.khasra_no === khasraNo) {
+      gisMap.fitBounds(layer.getBounds(), { maxZoom: 18, padding: [50, 50] });
+      layer.openPopup();
+      if (layer.setStyle) {
+        layer.setStyle({ color: '#f59e0b', weight: 4, fillOpacity: 0.7 });
+      }
+    }
+  });
+}
+
+function speakTextFromBubble(btnEl) {
+  const bubble = btnEl.closest('.chat-bubble');
+  if (!bubble) return;
+
+  // Extract clean text
+  const clone = bubble.cloneNode(true);
+  const meta = clone.querySelector('.chat-bubble-meta');
+  if (meta) meta.remove();
+  const actions = clone.querySelector('.chat-action-container');
+  if (actions) actions.remove();
+
+  const textToRead = clone.innerText;
+  speakText(textToRead, btnEl);
+}
+
+function speakText(rawText, btnEl) {
+  if (!('speechSynthesis' in window)) {
+    alert("Speech Synthesis is not supported in this browser.");
+    return;
+  }
+
+  // If already speaking the same text, toggle off
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    if (activeSpeakingButton) {
+      activeSpeakingButton.classList.remove('speaking');
+      activeSpeakingButton = null;
+    }
+    if (btnEl === activeSpeakingButton) return;
+  }
+
+  // Clean text of markdown characters, links, and emojis
+  const clean = rawText
+    .replace(/[#*_`]/g, '')
+    .replace(/\bhttps?:\/\/\S+/gi, '')
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .trim();
+
+  if (!clean) return;
+
+  const utterance = new SpeechSynthesisUtterance(clean);
+  const isHindi = /[\u0900-\u097F]/.test(clean);
+
+  // Pick voice
+  const voices = window.speechSynthesis.getVoices();
+  let voice = null;
+  if (isHindi) {
+    voice = voices.find(v => v.lang.includes('hi') || v.name.includes('Hindi'));
+    utterance.lang = 'hi-IN';
+  } else {
+    voice = voices.find(v => v.lang === 'en-IN') || voices.find(v => v.lang.startsWith('en'));
+    utterance.lang = 'en-IN';
+  }
+
+  if (voice) utterance.voice = voice;
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+
+  if (btnEl) {
+    btnEl.classList.add('speaking');
+    activeSpeakingButton = btnEl;
+  }
+
+  utterance.onend = () => {
+    if (activeSpeakingButton) {
+      activeSpeakingButton.classList.remove('speaking');
+      activeSpeakingButton = null;
+    }
+  };
+
+  utterance.onerror = () => {
+    if (activeSpeakingButton) {
+      activeSpeakingButton.classList.remove('speaking');
+      activeSpeakingButton = null;
+    }
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function copyChatBubbleText(btnEl) {
+  const bubble = btnEl.closest('.chat-bubble');
+  if (!bubble) return;
+
+  const clone = bubble.cloneNode(true);
+  const meta = clone.querySelector('.chat-bubble-meta');
+  if (meta) meta.remove();
+  const actions = clone.querySelector('.chat-action-container');
+  if (actions) actions.remove();
+
+  const text = clone.innerText.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    const originalText = btnEl.innerHTML;
+    btnEl.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-600"></i> Copied!`;
+    lucide.createIcons();
+    setTimeout(() => {
+      btnEl.innerHTML = originalText;
+      lucide.createIcons();
+    }, 2000);
+  }).catch(() => {
+    alert("Could not copy text to clipboard.");
+  });
+}
+
+function startVoiceRecognition(targetInputId) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Voice recognition (Speech-to-Text) is not supported in this browser. Please use Chrome or Edge.");
+    return;
+  }
+
+  const inputEl = document.getElementById(targetInputId);
+  const micBtn = document.getElementById(targetInputId === 'floating-chat-input' ? 'floating-mic-btn' : 'dedicated-mic-btn');
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = 'en-IN'; // Default Indian English / Hindi mix
+
+  if (micBtn) micBtn.classList.add('listening');
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    if (inputEl) {
+      inputEl.value = transcript;
+      inputEl.focus();
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.warn("Speech recognition error:", event.error);
+    if (micBtn) micBtn.classList.remove('listening');
+  };
+
+  recognition.onend = () => {
+    if (micBtn) micBtn.classList.remove('listening');
+  };
+
+  recognition.start();
+}
+
+function clearFloatingChat() {
+  const container = document.getElementById('floating-chat-messages');
+  if (!container) return;
+  container.innerHTML = '';
+  chatConversationHistory = [];
+  appendChatBubble('assistant', getInitialWelcomeText(), [
+    { type: "NAVIGATE_TAB", tab: "map", label: "🗺️ Cadastral Map" },
+    { type: "NAVIGATE_TAB", tab: "disputes", label: "⚖️ Active Disputes" }
+  ], 'floating-chat-messages');
+}
+
+function clearDedicatedChat() {
+  const container = document.getElementById('dedicated-chat-messages');
+  if (!container) return;
+  container.innerHTML = '';
+  chatConversationHistory = [];
+  appendChatBubble('assistant', getInitialWelcomeText(), [
+    { type: "NAVIGATE_TAB", tab: "map", label: "🗺️ Open Cadastral Map" },
+    { type: "NAVIGATE_TAB", tab: "disputes", label: "⚖️ Inspect Disputes Engine" }
+  ], 'dedicated-chat-messages');
+}
+

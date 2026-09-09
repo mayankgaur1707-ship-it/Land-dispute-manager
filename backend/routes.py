@@ -16,6 +16,8 @@ from backend.database import (
 from backend.validation_engine import validate_land_record
 from backend.ocr_service import extract_land_record_from_text, get_sample_templates, generate_document_svg, SAMPLE_TEMPLATES
 from backend.blockchain_audit import record_audit_event, verify_audit_ledger, calculate_sha256
+from backend.ai_assistant import process_chat_message
+from backend.land_faq_kb import FAQ_CATEGORIES, POPULAR_FAQS, FAQS_BY_ID, search_faqs
 
 router = APIRouter(prefix="/api")
 
@@ -468,3 +470,119 @@ def verify_ledger():
         "total_blocks": len(blocks),
         "status_message": message
     }
+
+@router.post("/chat")
+def chat_with_assistant(payload: Dict[str, Any] = Body(...)):
+    """
+    Bhoomi AI Sahayak (भूमि AI सहायक) Intelligent Land Assistant API:
+    Answers questions about land disputes, specific cadastral parcels, legal remedies,
+    mutation steps, bank loan title diligence, and generates actionable deep links.
+    """
+    message = payload.get("message", "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+    role = payload.get("user_role", "REVENUE_OFFICER")
+    api_key = payload.get("api_key")
+    conversation_history = payload.get("conversation_history", [])
+    current_record_id = payload.get("current_record_id")
+    category_id = payload.get("category_id")
+    state = payload.get("state")
+
+    result = process_chat_message(
+        message=message,
+        role=role,
+        api_key=api_key,
+        conversation_history=conversation_history,
+        current_record_id=current_record_id,
+        state=state,
+        category_id=category_id
+    )
+    return result
+
+@router.get("/chat/suggestions")
+def get_chat_suggestions(role: str = "REVENUE_OFFICER"):
+    """
+    Returns role-tailored prompt starters and popular legal / dispute questions.
+    """
+    common = [
+        {"icon": "search", "label": "Status of Khasra 102", "query": "What is the status and dispute details for Khasra 102?"},
+        {"icon": "scale", "label": "Resolve Boundary Overlap", "query": "How do I resolve a boundary encroachment under Section 24?"},
+        {"icon": "file-text", "label": "Mutation (Dakhil Kharij)", "query": "What are the required documents and steps for land mutation?"},
+        {"icon": "landmark", "label": "Bank Loan Eligibility", "query": "Is Khasra 101 eligible for a bank agricultural loan?"},
+        {"icon": "shield-check", "label": "Verify Blockchain Ledger", "query": "How does the SHA-256 blockchain audit trail prevent land fraud?"}
+    ]
+    
+    role_specific = {
+        "CITIZEN_FARMER": [
+            {"icon": "help-circle", "label": "मेरी जमीन पर विवाद है?", "query": "मेरी जमीन पर मेड़ का विवाद है, इसे कैसे सुलझाएं?"},
+            {"icon": "file-check", "label": "दाखिल खारिज प्रक्रिया", "query": "दाखिल खारिज (Mutation) कराने में कितने दिन लगते हैं?"}
+        ],
+        "REVENUE_OFFICER": [
+            {"icon": "map-pin", "label": "ETS Survey Procedure", "query": "What are the procedural steps for conducting an ETS field demarcation?"},
+            {"icon": "check-square", "label": "Certify Pending Record", "query": "How do I review and certify low confidence OCR records in the queue?"}
+        ],
+        "BANK_OFFICER": [
+            {"icon": "file-search", "label": "Form 15/16 Due Diligence", "query": "What checks are required for a 30-year non-encumbrance certificate?"},
+            {"icon": "alert-circle", "label": "Assess Disputed Risk", "query": "Can a mortgage be created on a parcel flagged with WARNING status?"}
+        ],
+        "DILRMP_ADMIN": [
+            {"icon": "bar-chart-2", "label": "State Progress Summary", "query": "Summarize the cadastral digitization rate across all pilot states."},
+            {"icon": "cpu", "label": "OCR Continuous Learning", "query": "How does human officer feedback improve the ML OCR model accuracy?"}
+        ]
+    }
+    
+    specific = role_specific.get(role, role_specific["REVENUE_OFFICER"])
+    return {
+        "role": role,
+        "suggestions": specific + common
+    }
+
+# -------------------------------------------------------------------------
+# LAND RECORDS KNOWLEDGE BASE (184 FAQS) ENDPOINTS
+# -------------------------------------------------------------------------
+
+@router.get("/faq/categories")
+def get_faq_categories():
+    """
+    Returns the list of 14 official Land Records FAQ categories with item counts.
+    """
+    return {"categories": FAQ_CATEGORIES}
+
+@router.get("/faq/popular")
+def get_popular_faqs():
+    """
+    Returns the top 18 citizen-popular Land Records questions.
+    """
+    popular = [FAQS_BY_ID[fid] for fid in POPULAR_FAQS if fid in FAQS_BY_ID]
+    return {"popular_faqs": popular}
+
+@router.get("/faq/search")
+def search_faq_database(
+    q: Optional[str] = None,
+    category_id: Optional[str] = None,
+    state: Optional[str] = None,
+    limit: int = 50
+):
+    """
+    Search and filter across the 184 Land Records FAQs by query, category, or state.
+    """
+    results = search_faqs(query=q, category_id=category_id, state=state, limit=limit)
+    return {
+        "count": len(results),
+        "query": q,
+        "category_id": category_id,
+        "state": state,
+        "results": results
+    }
+
+@router.get("/faq/{faq_id}")
+def get_faq_by_id(faq_id: str):
+    """
+    Returns full details for a specific FAQ by ID.
+    """
+    if faq_id not in FAQS_BY_ID:
+        raise HTTPException(status_code=404, detail=f"FAQ with ID '{faq_id}' not found")
+    return FAQS_BY_ID[faq_id]
+
+

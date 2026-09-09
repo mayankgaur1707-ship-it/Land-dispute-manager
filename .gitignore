@@ -9,3 +9,4 @@ venv/
 land_records.db
 *.log
 .DS_Store
+scratch/
