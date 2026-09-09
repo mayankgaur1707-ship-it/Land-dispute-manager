@@ -13,86 +13,88 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans">
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col" style="font-family: 'Plus Jakarta Sans', sans-serif;">
 
-  <!-- TOP GOVT BANNER -->
-  <header class="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white shadow-lg border-b-4 border-amber-500">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center space-x-3.5">
-        <div class="w-11 h-11 bg-white/10 rounded-xl p-2 flex items-center justify-center border border-white/20 backdrop-blur shadow-inner">
-          <i data-lucide="shield-check" class="w-7 h-7 text-amber-400"></i>
-        </div>
+  <!-- TOP INSTITUTIONAL HEADER -->
+  <header class="bg-slate-900 text-white border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <a href="/" title="Back to Overview" class="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center font-bold text-xs tracking-tighter text-white hover:bg-white/20 transition">
+          BH
+        </a>
         <div>
           <div class="flex items-center space-x-2">
-            <span class="text-xs font-semibold tracking-wider uppercase text-amber-400">Ministry of Rural Development</span>
-            <span class="text-xs text-white/50">•</span>
-            <span class="text-xs text-white/80">Government of India</span>
+            <span class="text-[10px] font-semibold tracking-wider uppercase text-slate-400">Ministry of Rural Development</span>
+            <span class="text-xs text-slate-600">•</span>
+            <span class="text-[10px] text-slate-400">Government of India</span>
           </div>
-          <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Intelligent Land Record Digitization & Validation System
-            <span class="text-[11px] bg-emerald-500/30 text-emerald-300 font-medium px-2.5 py-0.5 rounded-full border border-emerald-400/30">AI • GIS • DILRMP • Blockchain</span>
+          <h1 class="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-2">
+            BHOOMI
+            <span class="text-xs font-normal text-slate-400">| Land Record Digitization & Validation Console</span>
           </h1>
         </div>
       </div>
 
-      <!-- Right Header: Persona Role Selector & Status Pills -->
+      <!-- Right Header: Navigation Link, Role Selector & Ledger Status -->
       <div class="flex flex-wrap items-center gap-3 text-xs">
-        <!-- Role Switcher -->
-        <div class="bg-white/10 p-1 rounded-xl border border-white/20 flex items-center gap-1.5 backdrop-blur">
-          <span class="text-white/70 pl-2 font-medium flex items-center gap-1">
-            <i data-lucide="user" class="w-3.5 h-3.5 text-amber-300"></i> Active Role:
+        <a href="/" class="text-slate-300 hover:text-white flex items-center gap-1.5 transition text-xs font-medium py-1.5 px-3 rounded-lg hover:bg-white/10 border border-slate-700/60">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+          <span>Overview Page</span>
+        </a>
+
+        <!-- Role Selector -->
+        <div class="bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-2">
+          <span class="text-slate-400 font-medium flex items-center gap-1">
+            <i data-lucide="user" class="w-3.5 h-3.5 text-slate-300"></i> Role:
           </span>
-          <select id="role-selector" onchange="handleRoleChange(this.value)" class="bg-slate-800 text-amber-300 font-bold text-xs py-1 px-2.5 rounded-lg border-none focus:ring-2 focus:ring-amber-400 cursor-pointer">
-            <option value="REVENUE_OFFICER">🏛️ Revenue Officer / Patwari</option>
-            <option value="CITIZEN_FARMER">👤 Citizen / Landowner</option>
-            <option value="BANK_OFFICER">🏦 Bank / Lending Officer</option>
-            <option value="DILRMP_ADMIN">⚙️ DILRMP State Admin</option>
+          <select id="role-selector" onchange="handleRoleChange(this.value)" class="bg-slate-800 text-white font-medium text-xs border-none focus:ring-0 cursor-pointer outline-none">
+            <option value="REVENUE_OFFICER">Revenue Officer / Patwari</option>
+            <option value="CITIZEN_FARMER">Citizen / Landowner</option>
+            <option value="BANK_OFFICER">Bank / Lending Officer</option>
+            <option value="DILRMP_ADMIN">DILRMP State Admin</option>
           </select>
         </div>
 
-        <div class="hidden sm:flex items-center gap-2">
-          <a href="/landing" class="bg-white/10 hover:bg-white/20 text-white font-semibold text-xs px-3 py-1.5 rounded-lg border border-white/20 flex items-center gap-1.5 transition">
-            <i data-lucide="globe" class="w-3.5 h-3.5 text-emerald-300"></i> Project Website
-          </a>
-          <div class="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span class="text-white/70">DILRMP Gateway:</span>
-            <span id="top-ledger-status" class="font-semibold text-emerald-300">Synchronized</span>
-          </div>
+        <div class="hidden sm:flex items-center gap-2 text-xs bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="text-slate-400">Ledger:</span>
+          <span id="top-ledger-status" class="font-semibold text-emerald-400">Synchronized</span>
         </div>
       </div>
     </div>
   </header>
 
   <!-- NAVIGATION TABS -->
-  <nav class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 sm:space-x-3 overflow-x-auto py-2">
-      <a href="/landing" class="px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 shadow-xs">
-        <i data-lucide="globe" class="w-4 h-4 text-emerald-600"></i> Project Website
-      </a>
-      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
-        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard Overview
+  <nav class="bg-white border-b border-slate-200 shadow-xs sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1.5 overflow-x-auto py-2">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Overview
       </button>
-      <button onclick="switchTab('digitize')" id="tab-digitize" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+      <button onclick="switchTab('digitize')" id="tab-digitize" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
         <i data-lucide="scan-line" class="w-4 h-4"></i> AI-OCR Digitizer
       </button>
-      <button onclick="switchTab('verify')" id="tab-verify" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap relative">
-        <i data-lucide="user-check" class="w-4 h-4 text-amber-600"></i> Human Verification Queue
-        <span id="badge-pending-count" class="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold border border-amber-300">1</span>
+      <button onclick="switchTab('verify')" id="tab-verify" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap relative">
+        <i data-lucide="user-check" class="w-4 h-4 text-amber-600"></i> Review Queue
+        <span id="badge-pending-count" class="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1 border border-amber-300">1</span>
       </button>
-      <button onclick="switchTab('disputes')" id="tab-disputes" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+      <button onclick="switchTab('disputes')" id="tab-disputes" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
         <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-600"></i> Dispute Engine
-        <span id="badge-disputes-count" class="bg-rose-100 text-rose-700 text-[11px] px-2 py-0.5 rounded-full font-bold border border-rose-300">1</span>
+        <span id="badge-disputes-count" class="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1 border border-rose-300">1</span>
       </button>
-      <button onclick="switchTab('map')" id="tab-map" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
-        <i data-lucide="map" class="w-4 h-4"></i> GIS Cadastral Map
+      <button onclick="switchTab('map')" id="tab-map" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+        <i data-lucide="map" class="w-4 h-4"></i> Cadastral Map
       </button>
-      <button onclick="switchTab('ledger')" id="tab-ledger" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+      <button onclick="switchTab('ledger')" id="tab-ledger" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
         <i data-lucide="blocks" class="w-4 h-4"></i> Blockchain Audit
       </button>
-      <button onclick="switchTab('citizen')" id="tab-citizen" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
+      <button onclick="switchTab('citizen')" id="tab-citizen" class="tab-btn px-3.5 py-2 text-xs font-semibold rounded-lg flex items-center gap-2 transition-all whitespace-nowrap">
         <i data-lucide="search" class="w-4 h-4"></i> Citizen Portal
       </button>
     </div>

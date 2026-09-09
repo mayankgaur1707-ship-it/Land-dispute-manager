@@ -1,8 +1,11 @@
-/* Custom styles for Land Record Digitization System */
-
+/* Minimalist Tab Navigation */
 .tab-btn {
-  color: #64748b;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  border-radius: 8px;
   border: 1px solid transparent;
+  transition: all 0.15s ease;
 }
 
 .tab-btn:hover {
@@ -11,9 +14,17 @@
 }
 
 .tab-btn.active {
-  color: #065f46;
-  background-color: #ecfdf5;
-  border-color: #a7f3d0;
+  color: #ffffff;
+  background-color: #0f172a;
+  border-color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tab-btn.active #badge-pending-count,
+.tab-btn.active #badge-disputes-count {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Leaflet map container styling */

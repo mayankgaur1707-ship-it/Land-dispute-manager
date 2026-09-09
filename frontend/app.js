@@ -22,6 +22,13 @@ async function initApp() {
   await loadPendingVerifications();
   await loadDisputes();
   await loadLedger();
+  
+  // Hash deep-linking
+  const hash = window.location.hash.replace('#', '');
+  if (hash && ['dashboard', 'digitize', 'verify', 'disputes', 'map', 'ledger', 'citizen'].includes(hash)) {
+    switchTab(hash);
+  }
+
   lucide.createIcons();
 }
 
@@ -92,6 +99,10 @@ function switchTab(tabId) {
     }, 150);
   } else if (tabId === 'verify') {
     loadPendingVerifications();
+  }
+
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState(null, '', '#' + tabId);
   }
 
   lucide.createIcons();

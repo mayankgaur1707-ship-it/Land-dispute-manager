@@ -45,14 +45,8 @@ frontend_dir = os.path.join(base_dir, "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
+# Navigation Routing: Landing Page at root (/), Operational Console at /app
 @app.get("/")
-@app.get("/index.html")
-def serve_index():
-    index_path = os.path.join(frontend_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "Land Dispute Manager API is running. Access /api/health or /docs for API documentation."}
-
 @app.get("/landing")
 @app.get("/overview")
 def serve_landing():
@@ -60,6 +54,15 @@ def serve_landing():
     if os.path.exists(landing_path):
         return FileResponse(landing_path)
     return FileResponse(os.path.join(frontend_dir, "index.html"))
+
+@app.get("/app")
+@app.get("/dashboard")
+@app.get("/index.html")
+def serve_app():
+    index_path = os.path.join(frontend_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Land Dispute Manager API is running. Access /api/health or /docs for API documentation."}
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
